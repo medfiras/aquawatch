@@ -1,0 +1,248 @@
+"""DataUpdateCoordinator for AquaWatch."""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
+
+from .const import (
+    BUDGET_UNIT_EUR,
+    CONF_CONTRACT_ID,
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_PROVIDER,
+    DEFAULT_ANOMALY_ZSCORE_THRESHOLD,
+    DEFAULT_HOUSEHOLD_SIZE,
+    DEFAULT_LEAK_CONSECUTIVE_DAYS,
+    DEFAULT_LEAK_THRESHOLD_RATIO,
+    DEFAULT_UPDATE_INTERVAL_HOURS,
+    EVENT_ANOMALY_DETECTED,
+    EVENT_BUDGET_EXCEEDED,
+    EVENT_LEAK_SUSPECTED,
+    OPT_ANOMALY_ZSCORE_THRESHOLD,
+    OPT_BUDGET_AMOUNT,
+    OPT_BUDGET_UNIT,
+    OPT_HOUSEHOLD_SIZE,
+    OPT_LEAK_CONSECUTIVE_DAYS,
+    OPT_LEAK_THRESHOLD_RATIO,
+    OPT_UPDATE_INTERVAL_HOURS,
+)
+from .detection import detect_statistical_anomaly, detect_sustained_leak
+from .ecoscore import compute_eco_score
+from .forecast import forecast_month_end_cost, forecast_month_end_volume_m3
+from .models import ConsumptionRecord
+from .providers import get_provider_class
+from .providers.exceptions import AuthError, ProviderError
+
+_LOGGER = logging.getLogger(__name__)
+
+_HISTORY_WINDOW_DAYS = 400
+_BASELINE_DAYS = 14
+_STALE_AFTER_DAYS = 3
+
+
+@dataclass
+class AquaWatchData:
+    """Computed state exposed to AquaWatch entities."""
+
+    records: list[ConsumptionRecord]
+    price_per_m3: float
+    last_sync: datetime
+    forecast_volume_m3: float | None
+    forecast_cost: float | None
+    eco_score: int
+    eco_grade: str
+    eco_tip: str
+    vs_last_week_pct: float | None
+    vs_last_month_pct: float | None
+    vs_last_year_pct: float | None
+    leak_suspected: bool
+    anomaly_detected: bool
+    budget_exceeded: bool
+    data_stale: bool
+
+
+class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
+    """Fetch and process AquaWatch data on a schedule."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        interval_hours = entry.options.get(
+            OPT_UPDATE_INTERVAL_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS
+        )
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"aquawatch_{entry.entry_id}",
+            update_interval=timedelta(hours=interval_hours),
+        )
+        self.entry = entry
+        self._provider_cls = get_provider_class(entry.data[CONF_PROVIDER])
+        self._contract_id = entry.data[CONF_CONTRACT_ID]
+        self._records: list[ConsumptionRecord] = []
+
+    async def _async_update_data(self) -> AquaWatchData:
+        provider = self._provider_cls()
+        try:
+            try:
+                await provider.async_authenticate(
+                    self.entry.data[CONF_EMAIL], self.entry.data[CONF_PASSWORD]
+                )
+            except AuthError as err:
+                raise ConfigEntryAuthFailed(str(err)) from err
+
+            today = datetime.now().date()
+            if not self._records:
+                start = today - timedelta(days=_HISTORY_WINDOW_DAYS)
+            else:
+                last_known = max(r.record_date for r in self._records)
+                start = last_known + timedelta(days=1)
+
+            price_per_m3 = self.data.price_per_m3 if self.data else 0.0
+            if start <= today:
+                try:
+                    batch = await provider.async_get_daily_consumption(
+                        self._contract_id, start, today
+                    )
+                except ProviderError as err:
+                    raise UpdateFailed(str(err)) from err
+
+                self._records.extend(batch.records)
+                price_per_m3 = batch.price_per_m3
+        finally:
+            await provider.async_close()
+
+        cutoff = today - timedelta(days=_HISTORY_WINDOW_DAYS)
+        self._records = sorted(
+            (r for r in self._records if r.record_date >= cutoff),
+            key=lambda r: r.record_date,
+        )
+
+        return self._build_data(today, price_per_m3)
+
+    def _build_data(self, today: date, price_per_m3: float) -> AquaWatchData:
+        options = self.entry.options
+        records = self._records
+
+        last_sync = (
+            datetime.combine(
+                max(r.record_date for r in records), datetime.min.time()
+            )
+            if records
+            else datetime.now()
+        )
+        data_stale = bool(records) and (
+            today - records[-1].record_date
+        ).days > _STALE_AFTER_DAYS
+
+        forecast_volume = forecast_month_end_volume_m3(records, today)
+        forecast_cost = forecast_month_end_cost(records, today, price_per_m3)
+
+        household_size = options.get(OPT_HOUSEHOLD_SIZE, DEFAULT_HOUSEHOLD_SIZE)
+        recent_30 = [r for r in records if (today - r.record_date).days <= 30]
+        avg_liters_per_day = (
+            sum(r.liters for r in recent_30) / len(recent_30) if recent_30 else 0.0
+        )
+        eco_score, eco_grade, eco_tip = compute_eco_score(
+            avg_liters_per_day, household_size
+        )
+
+        vs_week = _percent_change(records, today, 7)
+        vs_month = _percent_change(records, today, 30)
+        vs_year = _percent_change(records, today, 365)
+
+        leak_suspected = detect_sustained_leak(
+            records,
+            baseline_days=_BASELINE_DAYS,
+            threshold_ratio=options.get(
+                OPT_LEAK_THRESHOLD_RATIO, DEFAULT_LEAK_THRESHOLD_RATIO
+            ),
+            consecutive_days_required=options.get(
+                OPT_LEAK_CONSECUTIVE_DAYS, DEFAULT_LEAK_CONSECUTIVE_DAYS
+            ),
+        )
+        anomaly_detected = detect_statistical_anomaly(
+            records,
+            baseline_days=_BASELINE_DAYS,
+            zscore_threshold=options.get(
+                OPT_ANOMALY_ZSCORE_THRESHOLD, DEFAULT_ANOMALY_ZSCORE_THRESHOLD
+            ),
+        )
+
+        budget_amount = options.get(OPT_BUDGET_AMOUNT, 0) or 0
+        budget_unit = options.get(OPT_BUDGET_UNIT, BUDGET_UNIT_EUR)
+        projected = forecast_cost if budget_unit == BUDGET_UNIT_EUR else forecast_volume
+        budget_exceeded = bool(budget_amount) and (
+            projected is not None and projected > budget_amount
+        )
+
+        if self.data:
+            if leak_suspected and not self.data.leak_suspected:
+                self.hass.bus.async_fire(
+                    EVENT_LEAK_SUSPECTED, {"entry_id": self.entry.entry_id}
+                )
+            if anomaly_detected and not self.data.anomaly_detected:
+                self.hass.bus.async_fire(
+                    EVENT_ANOMALY_DETECTED, {"entry_id": self.entry.entry_id}
+                )
+            if budget_exceeded and not self.data.budget_exceeded:
+                self.hass.bus.async_fire(
+                    EVENT_BUDGET_EXCEEDED, {"entry_id": self.entry.entry_id}
+                )
+
+        return AquaWatchData(
+            records=records,
+            price_per_m3=price_per_m3,
+            last_sync=last_sync,
+            forecast_volume_m3=forecast_volume,
+            forecast_cost=forecast_cost,
+            eco_score=eco_score,
+            eco_grade=eco_grade,
+            eco_tip=eco_tip,
+            vs_last_week_pct=vs_week,
+            vs_last_month_pct=vs_month,
+            vs_last_year_pct=vs_year,
+            leak_suspected=leak_suspected,
+            anomaly_detected=anomaly_detected,
+            budget_exceeded=budget_exceeded,
+            data_stale=data_stale,
+        )
+
+    async def async_recalibrate_baseline(self) -> None:
+        """Drop all but the last _BASELINE_DAYS records to reset the leak/anomaly baseline."""
+        self._records = sorted(self._records, key=lambda r: r.record_date)[
+            -_BASELINE_DAYS:
+        ]
+        await self.async_request_refresh()
+
+
+def _percent_change(
+    records: list[ConsumptionRecord], today: date, days_back: int
+) -> float | None:
+    """Compare the last `days_back` days to the equivalent prior period."""
+    current_start = today - timedelta(days=days_back - 1)
+    previous_start = current_start - timedelta(days=days_back)
+    previous_end = current_start - timedelta(days=1)
+
+    current = [r for r in records if current_start <= r.record_date <= today]
+    previous = [
+        r for r in records if previous_start <= r.record_date <= previous_end
+    ]
+
+    if not current or not previous:
+        return None
+
+    current_total = sum(r.liters for r in current)
+    previous_total = sum(r.liters for r in previous)
+    if previous_total == 0:
+        return None
+
+    return ((current_total - previous_total) / previous_total) * 100
