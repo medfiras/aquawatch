@@ -22,7 +22,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["custom_components.aquawatch"]
+packages = ["custom_components", "custom_components.aquawatch"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
