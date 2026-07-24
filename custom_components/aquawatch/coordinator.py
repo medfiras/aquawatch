@@ -95,6 +95,14 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         self._records: list[ConsumptionRecord] = []
         self._statistic_id = statistic_id_for_entry(entry.entry_id)
         self._running_sum: float | None = None
+        # The last date already durably covered by long-term statistics, as
+        # recorded by the recorder component itself. Unlike `self._records`
+        # (in-memory only), this reflects state that survives a HA restart,
+        # so it is what protects against re-fetching/re-pushing already
+        # counted days after every restart. `None` means "not yet determined
+        # this coordinator lifetime" (lazily resolved on first update, same
+        # as `self._running_sum`).
+        self._last_statistic_date: date | None = None
 
     async def _async_update_data(self) -> AquaWatchData:
         provider = self._provider_cls()
@@ -107,45 +115,76 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                 raise ConfigEntryAuthFailed(str(err)) from err
 
             today = datetime.now().date()
+
+            # Provisional check for whether there is anything left to fetch,
+            # based only on in-memory records (which do NOT survive a
+            # restart). This is intentionally the same cheap gate as before;
+            # it only decides whether it's worth consulting the durable
+            # statistic below. The actual fetch start date is recomputed
+            # afterwards from the durable statistic so it is correct even
+            # right after a restart, when `self._records` is empty.
             if not self._records:
-                start = today - timedelta(days=_HISTORY_WINDOW_DAYS)
+                provisional_start = today - timedelta(days=_HISTORY_WINDOW_DAYS)
             else:
                 last_known = max(r.record_date for r in self._records)
-                start = last_known + timedelta(days=1)
+                provisional_start = last_known + timedelta(days=1)
 
             price_per_m3 = self.data.price_per_m3 if self.data else 0.0
-            if start <= today:
-                try:
-                    batch = await provider.async_get_daily_consumption(
-                        self._contract_id, start, today
-                    )
-                except ScrapingError as err:
-                    async_create_scraping_broken_issue(self.hass, self.entry.entry_id)
-                    raise UpdateFailed(str(err)) from err
-                except ProviderError as err:
-                    raise UpdateFailed(str(err)) from err
-
-                self._records.extend(batch.records)
-                price_per_m3 = batch.price_per_m3
-
+            if provisional_start <= today:
                 if self._running_sum is None:
                     last_stats = await self.hass.async_add_executor_job(
                         get_last_statistics, self.hass, 1, self._statistic_id, True, {"sum"}
                     )
                     stats_for_id = last_stats.get(self._statistic_id) if last_stats else None
-                    self._running_sum = (
-                        stats_for_id[0].get("sum") or 0.0
-                        if stats_for_id
-                        else 0.0
-                    )
+                    if stats_for_id:
+                        self._running_sum = stats_for_id[0].get("sum") or 0.0
+                        last_start = stats_for_id[0].get("start")
+                        if last_start is not None:
+                            self._last_statistic_date = datetime.fromtimestamp(
+                                last_start, tz=timezone.utc
+                            ).date()
+                    else:
+                        self._running_sum = 0.0
 
-                self._running_sum = statistics.async_push_records(
-                    self.hass,
-                    self._statistic_id,
-                    self.entry.title,
-                    batch.records,
-                    self._running_sum,
-                )
+                # The date range already durably covered by long-term
+                # statistics always wins over `self._records` (which resets
+                # to empty on every restart), while still accounting for
+                # records that are newer than the last pushed statistic
+                # (e.g. right after `seed_from_backfill`, before this
+                # lifetime's first push).
+                if self._last_statistic_date is None:
+                    start = provisional_start
+                else:
+                    candidates = [self._last_statistic_date]
+                    if self._records:
+                        candidates.append(max(r.record_date for r in self._records))
+                    start = max(candidates) + timedelta(days=1)
+
+                if start <= today:
+                    try:
+                        batch = await provider.async_get_daily_consumption(
+                            self._contract_id, start, today
+                        )
+                    except ScrapingError as err:
+                        async_create_scraping_broken_issue(self.hass, self.entry.entry_id)
+                        raise UpdateFailed(str(err)) from err
+                    except ProviderError as err:
+                        raise UpdateFailed(str(err)) from err
+
+                    self._records.extend(batch.records)
+                    price_per_m3 = batch.price_per_m3
+
+                    self._running_sum = statistics.async_push_records(
+                        self.hass,
+                        self._statistic_id,
+                        self.entry.title,
+                        batch.records,
+                        self._running_sum,
+                    )
+                    if batch.records:
+                        self._last_statistic_date = max(
+                            r.record_date for r in batch.records
+                        )
         finally:
             await provider.async_close()
 

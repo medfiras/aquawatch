@@ -1,10 +1,10 @@
 """tests/test_coordinator.py"""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from custom_components.aquawatch.coordinator import _percent_change
+from custom_components.aquawatch.coordinator import _HISTORY_WINDOW_DAYS, _percent_change
 from custom_components.aquawatch.models import ConsumptionRecord
 
 
@@ -77,6 +77,10 @@ async def test_scraping_error_creates_repair_issue(hass) -> None:
         patch(
             "custom_components.aquawatch.coordinator.get_provider_class",
             return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={},
         ),
         patch(
             "custom_components.aquawatch.coordinator.async_create_scraping_broken_issue"
@@ -160,6 +164,93 @@ async def test_update_pushes_new_batch_into_statistics_with_threaded_running_sum
 
     # get_last_statistics is only consulted once, to seed the running sum.
     assert mock_get_last_stats.call_count == 1
+
+
+async def test_restart_resumes_from_last_statistic_date_not_full_history_window(
+    hass,
+) -> None:
+    """Reproduces the restart double-push bug: a fresh coordinator (empty
+    `_records`, `_running_sum` None -- as after a HA restart) must derive its
+    fetch-start date from the durable last statistic's own date, not from
+    `_records` (which is always empty right after a restart) falling back to
+    the full `_HISTORY_WINDOW_DAYS` window and re-pushing already-counted
+    days.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.models import ConsumptionBatch
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    today = date.today()
+    last_statistic_date = today - timedelta(days=5)
+    last_statistic_start_ts = datetime.combine(
+        last_statistic_date, datetime.min.time(), tzinfo=timezone.utc
+    ).timestamp()
+
+    fake_batch = ConsumptionBatch(
+        records=[_record(today, 120.0)], price_per_m3=4.0
+    )
+
+    fake_provider = AsyncMock()
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(return_value=fake_batch)
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={
+                "aquawatch:" + entry.entry_id + "_consumption": [
+                    {"sum": 500.0, "start": last_statistic_start_ts}
+                ]
+            },
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_records",
+            return_value=500.12,
+        ),
+    ):
+        # Simulate a fresh coordinator after a HA restart: `_records` is
+        # empty and `_running_sum` is None, exactly like a brand new
+        # instance -- the bug was that this alone caused a re-fetch of the
+        # full 740-day history window on every restart.
+        coordinator = AquaWatchCoordinator(hass, entry)
+        assert coordinator._records == []
+        assert coordinator._running_sum is None
+
+        await coordinator._async_update_data()
+
+    fake_provider.async_get_daily_consumption.assert_called_once()
+    call_args = fake_provider.async_get_daily_consumption.call_args.args
+    # call_args: (contract_id, start, today)
+    assert call_args[1] == last_statistic_date + timedelta(days=1)
+    assert call_args[1] != today - timedelta(days=_HISTORY_WINDOW_DAYS)
+
+    assert coordinator._last_statistic_date == today
 
 
 def _build_coordinator(hass) -> "AquaWatchCoordinator":  # noqa: F821
