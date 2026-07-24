@@ -41,7 +41,8 @@ from .ecoscore import compute_eco_score
 from .forecast import forecast_month_end_cost, forecast_month_end_volume_m3
 from .models import ConsumptionRecord
 from .providers import get_provider_class
-from .providers.exceptions import AuthError, ProviderError
+from .providers.exceptions import AuthError, ProviderError, ScrapingError
+from .repairs import async_create_scraping_broken_issue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,6 +113,9 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                     batch = await provider.async_get_daily_consumption(
                         self._contract_id, start, today
                     )
+                except ScrapingError as err:
+                    async_create_scraping_broken_issue(self.hass, self.entry.entry_id)
+                    raise UpdateFailed(str(err)) from err
                 except ProviderError as err:
                     raise UpdateFailed(str(err)) from err
 

@@ -38,3 +38,56 @@ def test_percent_change_returns_none_without_previous_period() -> None:
 
 def test_percent_change_returns_none_with_empty_records() -> None:
     assert _percent_change([], date(2024, 3, 15), days_back=7) is None
+
+
+async def test_scraping_error_creates_repair_issue(hass) -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.providers.exceptions import ScrapingError
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    fake_provider = AsyncMock()
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(
+        side_effect=ScrapingError("layout changed")
+    )
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.async_create_scraping_broken_issue"
+        ) as mock_issue,
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        from homeassistant.helpers.update_coordinator import UpdateFailed
+
+        try:
+            await coordinator._async_update_data()
+        except UpdateFailed:
+            pass
+
+    mock_issue.assert_called_once_with(hass, entry.entry_id)
