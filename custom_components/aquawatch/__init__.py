@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+from homeassistant.components.recorder.models import (
+    StatisticData,
+    StatisticMeanType,
+    StatisticMetaData,
+)
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
@@ -88,6 +92,8 @@ async def _async_backfill_statistics(
     metadata = StatisticMetaData(
         has_mean=False,
         has_sum=True,
+        mean_type=StatisticMeanType.NONE,
+        unit_class="volume",
         name=f"AquaWatch {entry.title}",
         source=DOMAIN,
         statistic_id=statistic_id,
