@@ -1,0 +1,60 @@
+blueprint:
+  name: "AquaWatch - Notification de fuite avec action"
+  description: >-
+    Envoie une notification mobile actionable quand AquaWatch détecte une
+    fuite ou une anomalie de consommation d'eau, avec un bouton pour marquer
+    l'alerte comme normale (recalibre la baseline de détection).
+  domain: automation
+  input:
+    leak_binary_sensor:
+      name: Capteur de fuite suspectée
+      selector:
+        entity:
+          domain: binary_sensor
+          integration: aquawatch
+    notify_device:
+      name: Appareil de notification mobile
+      selector:
+        device:
+          integration: mobile_app
+    aquawatch_entry_id:
+      name: ID de l'entrée AquaWatch
+      description: >-
+        Trouvable dans Paramètres > Appareils et services > AquaWatch > ⋮ >
+        Informations sur l'appareil (dans l'URL de la page).
+      selector:
+        text: {}
+
+trigger:
+  - platform: state
+    entity_id: !input leak_binary_sensor
+    to: "on"
+
+action:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: "💧 Fuite d'eau suspectée"
+    message: >-
+      Une consommation d'eau anormalement soutenue a été détectée. Vérifiez
+      votre installation.
+    data:
+      actions:
+        - action: "AQUAWATCH_MARK_NORMAL"
+          title: "Marquer comme normal"
+
+  - wait_for_trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "AQUAWATCH_MARK_NORMAL"
+    timeout:
+      hours: 12
+
+  - if:
+      - condition: template
+        value_template: "{{ wait.trigger is not none }}"
+    then:
+      - action: aquawatch.recalibrate_baseline
+        data:
+          entry_id: !input aquawatch_entry_id

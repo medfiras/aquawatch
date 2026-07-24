@@ -1,0 +1,45 @@
+title: Eau
+views:
+  - title: AquaWatch
+    path: aquawatch
+    cards:
+      - type: entities
+        title: Consommation
+        entities:
+          - sensor.aquawatch_consommation_jour
+          - sensor.aquawatch_consommation_veille
+          - sensor.aquawatch_index_compteur
+
+      - type: gauge
+        entity: sensor.aquawatch_eco_score
+        name: Éco-score
+        min: 0
+        max: 100
+        severity:
+          green: 75
+          yellow: 50
+          red: 0
+
+      - type: statistics-graph
+        title: Coût mensuel
+        entities:
+          - sensor.aquawatch_cout_mois_courant
+        period: month
+        stat_types:
+          - sum
+
+      - type: history-graph
+        title: Alertes
+        entities:
+          - binary_sensor.aquawatch_fuite_suspectee
+          - binary_sensor.aquawatch_anomalie_detectee
+          - binary_sensor.aquawatch_budget_depasse
+
+      - type: entities
+        title: Prévisions & comparaisons
+        entities:
+          - sensor.aquawatch_prevision_fin_mois_volume
+          - sensor.aquawatch_prevision_fin_mois_cout
+          - sensor.aquawatch_vs_semaine_precedente
+          - sensor.aquawatch_vs_mois_precedent
+          - sensor.aquawatch_vs_annee_precedente
