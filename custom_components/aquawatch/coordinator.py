@@ -45,7 +45,7 @@ from .providers.exceptions import AuthError, ProviderError
 
 _LOGGER = logging.getLogger(__name__)
 
-_HISTORY_WINDOW_DAYS = 400
+_HISTORY_WINDOW_DAYS = 740
 _BASELINE_DAYS = 14
 _STALE_AFTER_DAYS = 3
 
