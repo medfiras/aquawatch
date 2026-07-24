@@ -34,14 +34,6 @@ from .const import (
 from .providers import get_provider_class, list_provider_classes
 from .providers.exceptions import AuthError, ProviderUnavailable
 
-# Importing the concrete provider modules registers them (via the
-# @register_provider decorator) as a side effect. Nothing else in the
-# integration's normal load path (there is no central "import all providers"
-# step) imports them, so config_flow — the first place that needs the full
-# registry, since the config flow itself decides which providers to offer —
-# has to trigger that registration itself before it can enumerate providers.
-from .providers import saur, sedif, suez, veolia  # noqa: F401
-
 
 class AquaWatchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for AquaWatch."""

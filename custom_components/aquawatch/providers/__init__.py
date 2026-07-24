@@ -54,3 +54,16 @@ def list_provider_classes() -> list[type[WaterProvider]]:
         _PROVIDER_REGISTRY.values(),
         key=lambda cls: (not cls.available, cls.provider_id),
     )
+
+
+# Importing the concrete provider modules registers them (via the
+# @register_provider decorator) as a side effect. This must happen whenever
+# the `providers` package itself is imported, so that any code path — config
+# flow, coordinator setup on a plain HA restart, etc. — that imports this
+# package gets a fully populated registry, regardless of whether it also
+# happens to import config_flow.py. Placed at the bottom of the module (after
+# WaterProvider, register_provider, get_provider_class, and
+# list_provider_classes are defined) because the submodules do
+# `from . import WaterProvider, register_provider`, which requires this
+# module to already be fully defined by the time they're imported.
+from . import saur, sedif, suez, veolia  # noqa: F401,E402
