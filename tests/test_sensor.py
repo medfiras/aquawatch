@@ -34,6 +34,7 @@ def _sample_data() -> AquaWatchData:
         anomaly_detected=False,
         budget_exceeded=False,
         data_stale=False,
+        cost_month_to_date=9.0,
     )
 
 
@@ -84,3 +85,23 @@ def test_eco_score_exposes_grade_and_tip_attributes() -> None:
 def test_all_descriptions_have_unique_keys() -> None:
     keys = [d.key for d in SENSOR_DESCRIPTIONS]
     assert len(keys) == len(set(keys))
+
+
+def test_cout_mois_courant_and_prevision_fin_mois_cout_can_differ() -> None:
+    """The month-to-date accrued cost and the end-of-month forecast are distinct metrics."""
+    data = _sample_data()
+    assert data.cost_month_to_date != data.forecast_cost
+
+    coordinator = _fake_coordinator(data)
+
+    cout_mois_courant = AquaWatchSensor.__new__(AquaWatchSensor)
+    cout_mois_courant.coordinator = coordinator
+    cout_mois_courant.entity_description = _find_description("cout_mois_courant")
+
+    prevision_fin_mois_cout = AquaWatchSensor.__new__(AquaWatchSensor)
+    prevision_fin_mois_cout.coordinator = coordinator
+    prevision_fin_mois_cout.entity_description = _find_description("prevision_fin_mois_cout")
+
+    assert cout_mois_courant.native_value == 9.0
+    assert prevision_fin_mois_cout.native_value == 24.0
+    assert cout_mois_courant.native_value != prevision_fin_mois_cout.native_value

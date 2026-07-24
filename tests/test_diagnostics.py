@@ -46,6 +46,7 @@ async def test_diagnostics_redacts_credentials(hass) -> None:
         anomaly_detected=False,
         budget_exceeded=False,
         data_stale=False,
+        cost_month_to_date=9.0,
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
@@ -59,3 +60,4 @@ async def test_diagnostics_redacts_credentials(hass) -> None:
     assert diagnostics["computed"]["last_sync"] == "2024-03-15T06:00:00"
     assert diagnostics["computed"]["forecast_volume_m3"] == 6.0
     assert diagnostics["computed"]["forecast_cost"] == 24.0
+    assert diagnostics["computed"]["cost_month_to_date"] == 9.0

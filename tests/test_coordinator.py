@@ -160,3 +160,61 @@ async def test_update_pushes_new_batch_into_statistics_with_threaded_running_sum
 
     # get_last_statistics is only consulted once, to seed the running sum.
     assert mock_get_last_stats.call_count == 1
+
+
+def _build_coordinator(hass) -> "AquaWatchCoordinator":  # noqa: F821
+    from unittest.mock import patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.aquawatch.coordinator.get_provider_class",
+        return_value=lambda: None,
+    ):
+        return AquaWatchCoordinator(hass, entry)
+
+
+def test_build_data_computes_cost_month_to_date(hass) -> None:
+    coordinator = _build_coordinator(hass)
+    today = date(2024, 3, 15)
+    coordinator._records = [
+        _record(date(2024, 3, 1), 100.0),
+        _record(date(2024, 3, 10), 200.0),
+        _record(date(2024, 2, 28), 500.0),  # previous month, must be excluded
+    ]
+
+    data = coordinator._build_data(today, price_per_m3=4.0)
+
+    assert data.cost_month_to_date == pytest.approx((100.0 + 200.0) / 1000 * 4.0)
+
+
+def test_build_data_cost_month_to_date_none_without_current_month_records(hass) -> None:
+    coordinator = _build_coordinator(hass)
+    today = date(2024, 3, 15)
+    coordinator._records = [
+        _record(date(2024, 2, 28), 500.0),
+    ]
+
+    data = coordinator._build_data(today, price_per_m3=4.0)
+
+    assert data.cost_month_to_date is None

@@ -27,6 +27,7 @@ def _fake_coordinator(**overrides) -> MagicMock:
         anomaly_detected=False,
         budget_exceeded=False,
         data_stale=False,
+        cost_month_to_date=None,
     )
     base.update(overrides)
     coordinator = MagicMock()

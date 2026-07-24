@@ -48,6 +48,7 @@ def _fake_coordinator() -> MagicMock:
         anomaly_detected=False,
         budget_exceeded=False,
         data_stale=False,
+        cost_month_to_date=None,
     )
     return coordinator
 

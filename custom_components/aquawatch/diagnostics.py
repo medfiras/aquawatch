@@ -48,5 +48,6 @@ async def async_get_config_entry_diagnostics(
             "anomaly_detected": data.anomaly_detected if data else None,
             "budget_exceeded": data.budget_exceeded if data else None,
             "data_stale": data.data_stale if data else None,
+            "cost_month_to_date": data.cost_month_to_date if data else None,
         },
     }

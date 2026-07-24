@@ -73,6 +73,7 @@ class AquaWatchData:
     anomaly_detected: bool
     budget_exceeded: bool
     data_stale: bool
+    cost_month_to_date: float | None
 
 
 class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
@@ -174,6 +175,17 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         forecast_volume = forecast_month_end_volume_m3(records, today)
         forecast_cost = forecast_month_end_cost(records, today, price_per_m3)
 
+        month_records = [
+            r
+            for r in records
+            if r.record_date.month == today.month and r.record_date.year == today.year
+        ]
+        cost_month_to_date = (
+            (sum(r.liters for r in month_records) / 1000) * price_per_m3
+            if month_records
+            else None
+        )
+
         household_size = options.get(OPT_HOUSEHOLD_SIZE, DEFAULT_HOUSEHOLD_SIZE)
         recent_30 = [r for r in records if (today - r.record_date).days <= 30]
         avg_liters_per_day = (
@@ -242,6 +254,7 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
             anomaly_detected=anomaly_detected,
             budget_exceeded=budget_exceeded,
             data_stale=data_stale,
+            cost_month_to_date=cost_month_to_date,
         )
 
     async def async_recalibrate_baseline(self) -> None:
