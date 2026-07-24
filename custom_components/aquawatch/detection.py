@@ -1,9 +1,8 @@
 """Leak and anomaly detection heuristics for AquaWatch.
 
-The SEDIF portal only exposes daily consumption totals (no hourly data — see
-providers/sedif.py), so leak detection here is defined as daily consumption
-sustained above the personal baseline for several consecutive days, not a
-night-time flow window. See docs/superpowers/specs/2026-07-24-aquawatch-design.md.
+The SEDIF API only exposes daily totals, so leak detection is defined as
+sustained above-baseline consumption over consecutive days rather than a
+night-time flow window.
 """
 
 from __future__ import annotations

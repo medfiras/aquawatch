@@ -18,12 +18,11 @@ blueprint:
         device:
           integration: mobile_app
     aquawatch_entry_id:
-      name: ID de l'entrée AquaWatch
-      description: >-
-        Trouvable dans Paramètres > Appareils et services > AquaWatch > ⋮ >
-        Informations sur l'appareil (dans l'URL de la page).
+      name: Compte AquaWatch
+      description: Le compte/compteur AquaWatch concerné par cette alerte.
       selector:
-        text: {}
+        config_entry:
+          integration: aquawatch
 
 trigger:
   - platform: state

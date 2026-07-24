@@ -22,8 +22,8 @@ fournisseurs d'eau français.
 - Comparaison vs semaine/mois/année précédente
 - Éco-score gamifié (0-100, grade A-E) basé sur les repères ADEME
 - Détection de fuite (consommation soutenue au-dessus de la baseline sur
-  plusieurs jours — la granularité journalière de l'API SEDIF ne permet pas
-  une détection nocturne, voir `docs/superpowers/specs/` pour le détail)
+  plusieurs jours — l'API SEDIF n'exposant que des totaux journaliers, la
+  détection est définie ainsi plutôt que via une fenêtre de débit nocturne)
 - Détection d'anomalie statistique (z-score)
 - Alerte de budget mensuel (€ ou m³)
 - Import automatique de l'historique disponible dans les statistics long
