@@ -55,3 +55,7 @@ async def test_diagnostics_redacts_credentials(hass) -> None:
     assert diagnostics["entry_data"][CONF_PASSWORD] == "**REDACTED**"
     assert diagnostics["record_count"] == 1
     assert diagnostics["computed"]["eco_score"] == 75
+    assert diagnostics["computed"]["eco_grade"] == "B"
+    assert diagnostics["computed"]["last_sync"] == "2024-03-15T06:00:00"
+    assert diagnostics["computed"]["forecast_volume_m3"] == 6.0
+    assert diagnostics["computed"]["forecast_cost"] == 24.0
