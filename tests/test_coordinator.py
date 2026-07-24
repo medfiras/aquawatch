@@ -91,3 +91,72 @@ async def test_scraping_error_creates_repair_issue(hass) -> None:
             pass
 
     mock_issue.assert_called_once_with(hass, entry.entry_id)
+
+
+async def test_update_pushes_new_batch_into_statistics_with_threaded_running_sum(
+    hass,
+) -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.models import ConsumptionBatch
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    batch1 = ConsumptionBatch(records=[_record(date(2024, 3, 15), 150.0)], price_per_m3=4.0)
+    batch2 = ConsumptionBatch(records=[_record(date(2024, 3, 16), 200.0)], price_per_m3=4.0)
+
+    fake_provider = AsyncMock()
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(side_effect=[batch1, batch2])
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={},
+        ) as mock_get_last_stats,
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_records",
+            side_effect=[10.15, 10.35],
+        ) as mock_push,
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        await coordinator._async_update_data()
+        await coordinator._async_update_data()
+
+    assert mock_push.call_count == 2
+    first_call_args = mock_push.call_args_list[0].args
+    second_call_args = mock_push.call_args_list[1].args
+
+    assert first_call_args[1] == "aquawatch:" + entry.entry_id + "_consumption"
+    assert first_call_args[3] == batch1.records
+    assert first_call_args[4] == 0.0
+
+    assert second_call_args[3] == batch2.records
+    assert second_call_args[4] == 10.15
+
+    # get_last_statistics is only consulted once, to seed the running sum.
+    assert mock_get_last_stats.call_count == 1

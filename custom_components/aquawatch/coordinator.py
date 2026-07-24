@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -14,6 +15,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
+from . import statistics
 from .const import (
     BUDGET_UNIT_EUR,
     CONF_CONTRACT_ID,
@@ -43,6 +45,7 @@ from .models import ConsumptionRecord
 from .providers import get_provider_class
 from .providers.exceptions import AuthError, ProviderError, ScrapingError
 from .repairs import async_create_scraping_broken_issue
+from .statistics import statistic_id_for_entry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,6 +92,8 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         self._provider_cls = get_provider_class(entry.data[CONF_PROVIDER])
         self._contract_id = entry.data[CONF_CONTRACT_ID]
         self._records: list[ConsumptionRecord] = []
+        self._statistic_id = statistic_id_for_entry(entry.entry_id)
+        self._running_sum: float | None = None
 
     async def _async_update_data(self) -> AquaWatchData:
         provider = self._provider_cls()
@@ -121,6 +126,25 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
 
                 self._records.extend(batch.records)
                 price_per_m3 = batch.price_per_m3
+
+                if self._running_sum is None:
+                    last_stats = await self.hass.async_add_executor_job(
+                        get_last_statistics, self.hass, 1, self._statistic_id, True, {"sum"}
+                    )
+                    stats_for_id = last_stats.get(self._statistic_id) if last_stats else None
+                    self._running_sum = (
+                        stats_for_id[0].get("sum") or 0.0
+                        if stats_for_id
+                        else 0.0
+                    )
+
+                self._running_sum = statistics.async_push_records(
+                    self.hass,
+                    self._statistic_id,
+                    self.entry.title,
+                    batch.records,
+                    self._running_sum,
+                )
         finally:
             await provider.async_close()
 

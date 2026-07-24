@@ -1,0 +1,43 @@
+"""tests/test_statistics.py"""
+
+from datetime import date
+from unittest.mock import patch
+
+from custom_components.aquawatch.models import ConsumptionRecord
+from custom_components.aquawatch.statistics import async_push_records, statistic_id_for_entry
+
+
+def test_statistic_id_for_entry_format() -> None:
+    assert statistic_id_for_entry("abc123") == "aquawatch:abc123_consumption"
+
+
+def test_async_push_records_returns_updated_running_sum(hass) -> None:
+    records = [
+        ConsumptionRecord(date(2024, 3, 15), 150.0, 100.0, False),
+        ConsumptionRecord(date(2024, 3, 16), 200.0, 100.2, False),
+    ]
+    with patch(
+        "custom_components.aquawatch.statistics.async_add_external_statistics"
+    ) as mock_add:
+        result = async_push_records(
+            hass, "aquawatch:entry1_consumption", "Test Entry", records, running_sum_start=10.0
+        )
+
+    assert result == 10.0 + 0.15 + 0.2
+    mock_add.assert_called_once()
+    metadata, statistics = mock_add.call_args[0][1], mock_add.call_args[0][2]
+    assert metadata["statistic_id"] == "aquawatch:entry1_consumption"
+    assert len(statistics) == 2
+    assert statistics[0]["sum"] == 10.15
+    assert statistics[1]["sum"] == 10.35
+
+
+def test_async_push_records_empty_list_returns_unchanged_sum(hass) -> None:
+    with patch(
+        "custom_components.aquawatch.statistics.async_add_external_statistics"
+    ) as mock_add:
+        result = async_push_records(
+            hass, "aquawatch:entry1_consumption", "Test Entry", [], running_sum_start=5.0
+        )
+    assert result == 5.0
+    mock_add.assert_not_called()

@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 
-from homeassistant.components.recorder.models import (
-    StatisticData,
-    StatisticMeanType,
-    StatisticMetaData,
-)
-from homeassistant.components.recorder.statistics import (
-    async_add_external_statistics,
-    get_last_statistics,
-)
+from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
+from . import statistics
 from .const import CONF_CONTRACT_ID, CONF_EMAIL, CONF_PASSWORD, CONF_PROVIDER, DOMAIN
 from .coordinator import AquaWatchCoordinator
 from .providers import get_provider_class
@@ -33,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up AquaWatch from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    statistic_id = f"{DOMAIN}:{entry.entry_id}_consumption"
+    statistic_id = statistics.statistic_id_for_entry(entry.entry_id)
     last_stats = await hass.async_add_executor_job(
         get_last_statistics, hass, 1, statistic_id, True, {"sum"}
     )
@@ -89,30 +82,6 @@ async def _async_backfill_statistics(
     if not batch or not batch.records:
         return
 
-    metadata = StatisticMetaData(
-        has_mean=False,
-        has_sum=True,
-        mean_type=StatisticMeanType.NONE,
-        unit_class="volume",
-        name=f"AquaWatch {entry.title}",
-        source=DOMAIN,
-        statistic_id=statistic_id,
-        unit_of_measurement="m³",
+    statistics.async_push_records(
+        hass, statistic_id, entry.title, batch.records, running_sum_start=0.0
     )
-
-    ordered = sorted(batch.records, key=lambda r: r.record_date)
-    running_sum = 0.0
-    statistics = []
-    for record in ordered:
-        running_sum += record.liters / 1000
-        statistics.append(
-            StatisticData(
-                start=datetime.combine(
-                    record.record_date, datetime.min.time(), tzinfo=timezone.utc
-                ),
-                state=record.liters / 1000,
-                sum=running_sum,
-            )
-        )
-
-    async_add_external_statistics(hass, metadata, statistics)

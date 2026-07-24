@@ -54,11 +54,15 @@ async def test_setup_entry_backfills_statistics_and_creates_coordinator(hass) ->
             return_value={},
         ),
         patch(
-            "custom_components.aquawatch.async_add_external_statistics"
+            "custom_components.aquawatch.statistics.async_add_external_statistics"
         ) as mock_add_stats,
         patch(
             "custom_components.aquawatch.coordinator.get_provider_class",
             return_value=fake_provider_cls,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={},
         ),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -67,7 +71,13 @@ async def test_setup_entry_backfills_statistics_and_creates_coordinator(hass) ->
     assert entry.state.value == "loaded"
     assert DOMAIN in hass.data
     assert entry.entry_id in hass.data[DOMAIN]
-    mock_add_stats.assert_called_once()
+    # Called twice: once by the initial backfill, once by the coordinator's
+    # first refresh (which also pushes newly-fetched records into long-term
+    # statistics — see coordinator.py). The fake provider returns the same
+    # fixed batch regardless of the requested date range, so both calls carry
+    # the same record here; in production the ranges (and hence records)
+    # differ so nothing is double-counted.
+    assert mock_add_stats.call_count == 2
 
 
 async def test_unload_entry_removes_coordinator(hass) -> None:
@@ -86,7 +96,7 @@ async def test_unload_entry_removes_coordinator(hass) -> None:
             return_value=fake_provider_cls,
         ),
         patch("custom_components.aquawatch.get_last_statistics", return_value={}),
-        patch("custom_components.aquawatch.async_add_external_statistics"),
+        patch("custom_components.aquawatch.statistics.async_add_external_statistics"),
         patch(
             "custom_components.aquawatch.coordinator.get_provider_class",
             return_value=fake_provider_cls,
