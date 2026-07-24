@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.config_entries import ConfigEntry
@@ -163,10 +163,12 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
 
         last_sync = (
             datetime.combine(
-                max(r.record_date for r in records), datetime.min.time()
+                max(r.record_date for r in records),
+                datetime.min.time(),
+                tzinfo=timezone.utc,
             )
             if records
-            else datetime.now()
+            else datetime.now(timezone.utc)
         )
         data_stale = bool(records) and (
             today - records[-1].record_date
