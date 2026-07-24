@@ -1,0 +1,23 @@
+force_refresh:
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: aquawatch
+
+recalibrate_baseline:
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: aquawatch
+
+export_csv:
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: aquawatch
