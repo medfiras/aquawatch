@@ -218,3 +218,77 @@ def test_build_data_cost_month_to_date_none_without_current_month_records(hass) 
     data = coordinator._build_data(today, price_per_m3=4.0)
 
     assert data.cost_month_to_date is None
+
+
+def test_seed_from_backfill_sets_records_sorted_and_running_sum(hass) -> None:
+    coordinator = _build_coordinator(hass)
+    records = [
+        _record(date(2024, 3, 2), 150.0),
+        _record(date(2024, 3, 1), 100.0),
+    ]
+
+    coordinator.seed_from_backfill(records, running_sum=42.5)
+
+    assert coordinator._records == sorted(records, key=lambda r: r.record_date)
+    assert coordinator._running_sum == 42.5
+
+
+async def test_seed_from_backfill_prevents_reduplicate_push_on_first_refresh(
+    hass,
+) -> None:
+    """After a backfill seeds the coordinator up to today, first refresh must
+    not re-fetch or re-push the same days into long-term statistics."""
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    today = date.today()
+    backfilled_records = [
+        _record(today - timedelta(days=1), 100.0),
+        _record(today, 120.0),
+    ]
+
+    fake_provider = AsyncMock()
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock()
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_records"
+        ) as mock_push,
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        coordinator.seed_from_backfill(backfilled_records, running_sum=0.22)
+        await coordinator._async_update_data()
+
+    # The backfill already reached "today", so the coordinator's own
+    # incremental window (last_known + 1 day .. today) is empty: it must not
+    # query the provider again nor push anything further.
+    fake_provider.async_get_daily_consumption.assert_not_called()
+    mock_push.assert_not_called()
+    assert coordinator._running_sum == pytest.approx(0.22)

@@ -13,6 +13,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from . import statistics
 from .const import CONF_CONTRACT_ID, CONF_EMAIL, CONF_PASSWORD, CONF_PROVIDER, DOMAIN
 from .coordinator import AquaWatchCoordinator
+from .models import ConsumptionBatch
 from .providers import get_provider_class
 from .providers.exceptions import AuthError, ProviderError
 from .services import async_setup_services
@@ -30,10 +31,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     last_stats = await hass.async_add_executor_job(
         get_last_statistics, hass, 1, statistic_id, True, {"sum"}
     )
+    backfill_batch = None
     if not last_stats:
-        await _async_backfill_statistics(hass, entry, statistic_id)
+        backfill_batch = await _async_backfill_statistics(hass, entry, statistic_id)
 
     coordinator = AquaWatchCoordinator(hass, entry)
+    if backfill_batch and backfill_batch.records:
+        # Seed the coordinator with what the backfill already fetched and
+        # pushed, so its first refresh only fetches/pushes days AFTER the
+        # backfill's window instead of re-fetching and re-pushing the same
+        # days into long-term statistics (which would corrupt the running
+        # sum). running_sum_start=0.0 was used for the backfill's push, so
+        # the resulting running sum is simply the sum of all backfilled
+        # records' liters (in m3).
+        running_sum = sum(r.liters for r in backfill_batch.records) / 1000
+        coordinator.seed_from_backfill(backfill_batch.records, running_sum)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
@@ -52,8 +64,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_backfill_statistics(
     hass: HomeAssistant, entry: ConfigEntry, statistic_id: str
-) -> None:
-    """Import as much historical consumption as the provider will allow."""
+) -> ConsumptionBatch | None:
+    """Import as much historical consumption as the provider will allow.
+
+    Pushes the fetched records into long-term statistics (this is the ONE
+    authoritative push for the historical window) and returns the batch so
+    the caller can seed the coordinator's in-memory state with it, letting
+    the coordinator's first refresh continue from where this backfill left
+    off instead of re-fetching/re-pushing the same days.
+    """
     provider_cls = get_provider_class(entry.data[CONF_PROVIDER])
     provider = provider_cls()
     today = date.today()
@@ -80,8 +99,9 @@ async def _async_backfill_statistics(
         await provider.async_close()
 
     if not batch or not batch.records:
-        return
+        return None
 
     statistics.async_push_records(
         hass, statistic_id, entry.title, batch.records, running_sum_start=0.0
     )
+    return batch

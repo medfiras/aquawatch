@@ -266,6 +266,18 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         ]
         await self.async_request_refresh()
 
+    def seed_from_backfill(
+        self, records: list[ConsumptionRecord], running_sum: float
+    ) -> None:
+        """Seed in-memory records/running-sum from a prior historical backfill.
+
+        Called once, before the first refresh, so the coordinator's own
+        incremental fetch continues from where the backfill left off instead
+        of re-fetching and re-pushing the same days into long-term statistics.
+        """
+        self._records = sorted(records, key=lambda r: r.record_date)
+        self._running_sum = running_sum
+
 
 def _percent_change(
     records: list[ConsumptionRecord], today: date, days_back: int

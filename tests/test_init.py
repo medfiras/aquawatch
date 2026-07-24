@@ -3,6 +3,7 @@
 from datetime import date
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.aquawatch.const import (
@@ -28,8 +29,13 @@ def _entry() -> MockConfigEntry:
 
 
 def _fake_batch() -> ConsumptionBatch:
+    # The fake provider ignores the requested date range and always returns
+    # this batch, so its record is dated "today" to mirror how a real
+    # backfill's window always ends at today — this is what lets the
+    # coordinator's first-refresh incremental window end up empty once it's
+    # seeded from the backfill.
     return ConsumptionBatch(
-        records=[ConsumptionRecord(date(2024, 3, 15), 150.0, 100.0, False)],
+        records=[ConsumptionRecord(date.today(), 150.0, 100.0, False)],
         price_per_m3=4.0,
     )
 
@@ -71,13 +77,26 @@ async def test_setup_entry_backfills_statistics_and_creates_coordinator(hass) ->
     assert entry.state.value == "loaded"
     assert DOMAIN in hass.data
     assert entry.entry_id in hass.data[DOMAIN]
-    # Called twice: once by the initial backfill, once by the coordinator's
-    # first refresh (which also pushes newly-fetched records into long-term
-    # statistics — see coordinator.py). The fake provider returns the same
-    # fixed batch regardless of the requested date range, so both calls carry
-    # the same record here; in production the ranges (and hence records)
-    # differ so nothing is double-counted.
-    assert mock_add_stats.call_count == 2
+    # The backfill fetches through "today" and pushes its records into
+    # long-term statistics. The coordinator is then seeded with those same
+    # records/running-sum (see __init__.async_setup_entry ->
+    # coordinator.seed_from_backfill), so its first refresh's incremental
+    # window (last_known + 1 day .. today) is empty and it pushes NOTHING
+    # further — there must be exactly one push of the backfilled records,
+    # not two, or the statistic's cumulative sum would double-count the
+    # overlapping days.
+    assert mock_add_stats.call_count == 1
+    pushed_statistics = mock_add_stats.call_args_list[0].args[2]
+    pushed_dates = {stat["start"].date() for stat in pushed_statistics}
+    assert pushed_dates == {record.record_date for record in _fake_batch().records}
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator._records == sorted(
+        _fake_batch().records, key=lambda r: r.record_date
+    )
+    assert coordinator._running_sum == pytest.approx(
+        sum(r.liters for r in _fake_batch().records) / 1000
+    )
 
 
 async def test_unload_entry_removes_coordinator(hass) -> None:
