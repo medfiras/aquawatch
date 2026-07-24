@@ -1,0 +1,99 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choose a water provider",
+        "data": { "provider": "Provider" }
+      },
+      "credentials": {
+        "title": "Sign in",
+        "data": { "email": "Email address", "password": "Password" }
+      },
+      "contract": {
+        "title": "Choose the meter to track",
+        "data": { "contract_id": "Meter" }
+      },
+      "reauth_confirm": {
+        "title": "Re-authentication required",
+        "data": { "email": "Email address", "password": "Password" }
+      }
+    },
+    "error": {
+      "invalid_auth": "Incorrect email or password",
+      "cannot_connect": "Could not connect to the provider's portal",
+      "no_contracts": "No active contract found on this account",
+      "provider_unavailable": "This provider is not yet supported"
+    },
+    "abort": {
+      "already_configured": "This meter is already configured",
+      "reauth_successful": "Re-authentication successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "update_interval_hours": "Refresh frequency (hours)",
+          "leak_threshold_ratio": "Leak threshold (ratio vs baseline)",
+          "leak_consecutive_days": "Consecutive days required for a leak",
+          "anomaly_zscore_threshold": "Anomaly threshold (z-score)",
+          "budget_amount": "Monthly budget",
+          "budget_unit": "Budget unit",
+          "household_size": "Number of people in the household"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "consommation_jour": { "name": "Today's consumption" },
+      "consommation_veille": { "name": "Yesterday's consumption" },
+      "index_compteur": { "name": "Meter index" },
+      "cout_jour": { "name": "Today's cost" },
+      "cout_mois_courant": { "name": "Current month cost" },
+      "prix_m3": { "name": "Price per m³" },
+      "prevision_fin_mois_volume": { "name": "End-of-month volume forecast" },
+      "prevision_fin_mois_cout": { "name": "End-of-month cost forecast" },
+      "vs_semaine_precedente": { "name": "Change vs previous week" },
+      "vs_mois_precedent": { "name": "Change vs previous month" },
+      "vs_annee_precedente": { "name": "Change vs previous year" },
+      "eco_score": { "name": "Eco-score" },
+      "derniere_synchro": { "name": "Last sync" }
+    },
+    "binary_sensor": {
+      "fuite_suspectee": { "name": "Leak suspected" },
+      "anomalie_detectee": { "name": "Anomaly detected" },
+      "budget_depasse": { "name": "Budget exceeded" },
+      "donnees_perimees": { "name": "Data stale" }
+    }
+  },
+  "services": {
+    "force_refresh": {
+      "name": "Force refresh",
+      "description": "Forces AquaWatch to fetch the latest data immediately.",
+      "fields": {
+        "entry_id": { "name": "Entry", "description": "The AquaWatch entry to refresh." }
+      }
+    },
+    "export_csv": {
+      "name": "Export CSV",
+      "description": "Exports the stored consumption history as CSV.",
+      "fields": {
+        "entry_id": { "name": "Entry", "description": "The AquaWatch entry to export." }
+      }
+    },
+    "recalibrate_baseline": {
+      "name": "Recalibrate baseline",
+      "description": "Resets the baseline used for leak/anomaly detection.",
+      "fields": {
+        "entry_id": { "name": "Entry", "description": "The AquaWatch entry to recalibrate." }
+      }
+    }
+  },
+  "issues": {
+    "scraping_broken": {
+      "title": "The provider's portal has changed",
+      "description": "AquaWatch can no longer read data from the portal. Its page structure has likely changed. Check the project's issue tracker."
+    }
+  }
+}

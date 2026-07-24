@@ -1,0 +1,99 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choisir un fournisseur d'eau",
+        "data": { "provider": "Fournisseur" }
+      },
+      "credentials": {
+        "title": "Se connecter",
+        "data": { "email": "Adresse e-mail", "password": "Mot de passe" }
+      },
+      "contract": {
+        "title": "Choisir le compteur à suivre",
+        "data": { "contract_id": "Compteur" }
+      },
+      "reauth_confirm": {
+        "title": "Reconnexion requise",
+        "data": { "email": "Adresse e-mail", "password": "Mot de passe" }
+      }
+    },
+    "error": {
+      "invalid_auth": "Email ou mot de passe incorrect",
+      "cannot_connect": "Impossible de se connecter au portail",
+      "no_contracts": "Aucun contrat actif trouvé sur ce compte",
+      "provider_unavailable": "Ce fournisseur n'est pas encore pris en charge"
+    },
+    "abort": {
+      "already_configured": "Ce compteur est déjà configuré",
+      "reauth_successful": "Reconnexion réussie"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "update_interval_hours": "Fréquence de rafraîchissement (heures)",
+          "leak_threshold_ratio": "Seuil de fuite (ratio vs baseline)",
+          "leak_consecutive_days": "Jours consécutifs requis pour une fuite",
+          "anomaly_zscore_threshold": "Seuil d'anomalie (z-score)",
+          "budget_amount": "Budget mensuel",
+          "budget_unit": "Unité du budget",
+          "household_size": "Nombre de personnes dans le foyer"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "consommation_jour": { "name": "Consommation du jour" },
+      "consommation_veille": { "name": "Consommation de la veille" },
+      "index_compteur": { "name": "Index du compteur" },
+      "cout_jour": { "name": "Coût du jour" },
+      "cout_mois_courant": { "name": "Coût du mois en cours" },
+      "prix_m3": { "name": "Prix au m³" },
+      "prevision_fin_mois_volume": { "name": "Prévision volume fin de mois" },
+      "prevision_fin_mois_cout": { "name": "Prévision coût fin de mois" },
+      "vs_semaine_precedente": { "name": "Variation vs semaine précédente" },
+      "vs_mois_precedent": { "name": "Variation vs mois précédent" },
+      "vs_annee_precedente": { "name": "Variation vs année précédente" },
+      "eco_score": { "name": "Éco-score" },
+      "derniere_synchro": { "name": "Dernière synchronisation" }
+    },
+    "binary_sensor": {
+      "fuite_suspectee": { "name": "Fuite suspectée" },
+      "anomalie_detectee": { "name": "Anomalie détectée" },
+      "budget_depasse": { "name": "Budget dépassé" },
+      "donnees_perimees": { "name": "Données périmées" }
+    }
+  },
+  "services": {
+    "force_refresh": {
+      "name": "Forcer la resynchronisation",
+      "description": "Force AquaWatch à récupérer immédiatement les dernières données.",
+      "fields": {
+        "entry_id": { "name": "Entrée", "description": "L'entrée AquaWatch concernée." }
+      }
+    },
+    "export_csv": {
+      "name": "Exporter en CSV",
+      "description": "Exporte l'historique de consommation stocké en CSV.",
+      "fields": {
+        "entry_id": { "name": "Entrée", "description": "L'entrée AquaWatch concernée." }
+      }
+    },
+    "recalibrate_baseline": {
+      "name": "Recalibrer la baseline",
+      "description": "Réinitialise la baseline utilisée pour la détection de fuite/anomalie.",
+      "fields": {
+        "entry_id": { "name": "Entrée", "description": "L'entrée AquaWatch concernée." }
+      }
+    }
+  },
+  "issues": {
+    "scraping_broken": {
+      "title": "Le portail du fournisseur a changé",
+      "description": "AquaWatch n'arrive plus à lire les données du portail. La structure du site a probablement changé. Consultez le suivi des problèmes du projet."
+    }
+  }
+}
