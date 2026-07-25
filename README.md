@@ -35,6 +35,40 @@ d'eau français.
 - Blueprint d'automatisation pour des notifications de fuite actionables
 - Exemple de dashboard Lovelace prêt à l'emploi
 
+## Entités
+
+### Capteurs
+
+| Entité | Description | Unité |
+|---|---|---|
+| Consommation du jour | Consommation du dernier relevé disponible | L |
+| Consommation de la veille | Consommation du relevé précédent | L |
+| Index du compteur | Valeur cumulée affichée par le compteur | m³ |
+| Coût du jour | Coût du dernier relevé (litres × prix au m³) | € |
+| Coût du mois en cours | Coût cumulé depuis le 1er du mois en cours | € |
+| Prix au m³ | Prix au m³ actuellement appliqué par le fournisseur | €/m³ |
+| Prévision volume fin de mois | Projection du volume total en fin de mois, basée sur la consommation actuelle | m³ |
+| Prévision coût fin de mois | Projection du coût total en fin de mois | € |
+| Variation vs semaine précédente | Écart de consommation par rapport aux 7 jours précédents | % |
+| Variation vs mois précédent | Écart de consommation par rapport aux 30 jours précédents | % |
+| Variation vs année précédente | Écart de consommation par rapport à la même période l'an dernier (nécessite ~2 ans d'historique) | % |
+| Éco-score | Score gamifié basé sur la consommation par personne, avec les attributs `grade` (A-E) et `conseil` | pts |
+| Dernière synchronisation | Date du dernier relevé récupéré avec succès *(diagnostic)* | — |
+| Solde du compte | Solde du compte client tel que rapporté par le fournisseur | € |
+
+Le capteur **Index du compteur** porte aussi des attributs supplémentaires :
+`numero_contrat`, `numero_serie_compteur`, `adresse` (point de livraison) et
+`statut_contrat`.
+
+### Capteurs binaires
+
+| Entité | Description |
+|---|---|
+| Fuite suspectée | Consommation quotidienne soutenue au-dessus de la baseline sur plusieurs jours consécutifs |
+| Anomalie détectée | Écart statistique (z-score) par rapport à la moyenne glissante des 14 derniers jours |
+| Budget dépassé | La projection de fin de mois dépasse le budget configuré (€ ou m³) |
+| Données périmées | Aucun nouveau relevé reçu depuis plusieurs jours *(diagnostic)* |
+
 ## Installation
 
 ### Via HACS
