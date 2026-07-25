@@ -17,5 +17,5 @@ def async_create_scraping_broken_issue(hass: HomeAssistant, entry_id: str) -> No
         is_fixable=False,
         severity=IssueSeverity.WARNING,
         translation_key="scraping_broken",
-        learn_more_url="https://github.com/fhajjej/aquawatch/issues",
+        learn_more_url="https://github.com/medfiras/aquawatch/issues",
     )

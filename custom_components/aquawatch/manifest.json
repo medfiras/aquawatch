@@ -4,10 +4,10 @@
   "codeowners": ["@fhajjej"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/fhajjej/aquawatch",
+  "documentation": "https://github.com/medfiras/aquawatch",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/fhajjej/aquawatch/issues",
+  "issue_tracker": "https://github.com/medfiras/aquawatch/issues",
   "requirements": ["aiohttp>=3.9", "certifi"],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }

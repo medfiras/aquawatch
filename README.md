@@ -11,12 +11,10 @@ d'eau français.
 
 ## Fournisseurs
 
-| Fournisseur | Statut |
-|---|---|
-| SEDIF / L'Eau d'Île-de-France | ✅ Fonctionnel |
-| Veolia | 🚧 Bientôt (contributions bienvenues) |
-| Suez | 🚧 Bientôt (contributions bienvenues) |
-| Saur | 🚧 Bientôt (contributions bienvenues) |
+- **SEDIF / L'Eau d'Île-de-France** — ✅ Fonctionnel
+- **Veolia** — 🚧 Bientôt (contributions bienvenues)
+- **Suez** — 🚧 Bientôt (contributions bienvenues)
+- **Saur** — 🚧 Bientôt (contributions bienvenues)
 
 ## Fonctionnalités
 

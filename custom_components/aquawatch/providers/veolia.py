@@ -10,7 +10,7 @@ from .exceptions import ProviderUnavailable
 
 _NOT_IMPLEMENTED_MSG = (
     "Veolia n'est pas encore pris en charge. "
-    "Contribuez sur https://github.com/fhajjej/aquawatch pour l'ajouter."
+    "Contribuez sur https://github.com/medfiras/aquawatch pour l'ajouter."
 )
 
 
