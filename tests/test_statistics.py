@@ -11,6 +11,15 @@ def test_statistic_id_for_entry_format() -> None:
     assert statistic_id_for_entry("abc123") == "aquawatch:abc123_consumption"
 
 
+def test_statistic_id_for_entry_lowercases_ulid_entry_id() -> None:
+    # HA config entry IDs are ULIDs (uppercase Crockford Base32), e.g.
+    # "01ARZ3NDEKTSV4RRFFQ69G5FAV" -- HA's valid_statistic_id() only
+    # accepts lowercase [0-9a-z_], so this must be lowercased.
+    result = statistic_id_for_entry("01ARZ3NDEKTSV4RRFFQ69G5FAV")
+    assert result == "aquawatch:01arz3ndektsv4rrffq69g5fav_consumption"
+    assert result == result.lower()
+
+
 def test_async_push_records_returns_updated_running_sum(hass) -> None:
     records = [
         ConsumptionRecord(date(2024, 3, 15), 150.0, 100.0, False),

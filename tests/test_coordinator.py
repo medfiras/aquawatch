@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.aquawatch.coordinator import _HISTORY_WINDOW_DAYS, _percent_change
 from custom_components.aquawatch.models import ConsumptionRecord
+from custom_components.aquawatch.statistics import statistic_id_for_entry
 
 
 def _record(day: date, liters: float) -> ConsumptionRecord:
@@ -155,7 +156,7 @@ async def test_update_pushes_new_batch_into_statistics_with_threaded_running_sum
     first_call_args = mock_push.call_args_list[0].args
     second_call_args = mock_push.call_args_list[1].args
 
-    assert first_call_args[1] == "aquawatch:" + entry.entry_id + "_consumption"
+    assert first_call_args[1] == statistic_id_for_entry(entry.entry_id)
     assert first_call_args[3] == batch1.records
     assert first_call_args[4] == 0.0
 
@@ -224,7 +225,7 @@ async def test_restart_resumes_from_last_statistic_date_not_full_history_window(
         patch(
             "custom_components.aquawatch.coordinator.get_last_statistics",
             return_value={
-                "aquawatch:" + entry.entry_id + "_consumption": [
+                statistic_id_for_entry(entry.entry_id): [
                     {"sum": 500.0, "start": last_statistic_start_ts}
                 ]
             },

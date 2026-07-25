@@ -17,8 +17,13 @@ from .models import ConsumptionRecord
 
 
 def statistic_id_for_entry(entry_id: str) -> str:
-    """Return the external statistic_id used for a given config entry."""
-    return f"{DOMAIN}:{entry_id}_consumption"
+    """Return the external statistic_id used for a given config entry.
+
+    HA's valid_statistic_id() only allows lowercase [0-9a-z_] in either half
+    of the "<domain>:<object_id>" format. entry_id is a ULID (Crockford
+    Base32), which is uppercase, so it must be lowercased here.
+    """
+    return f"{DOMAIN}:{entry_id.lower()}_consumption"
 
 
 def async_push_records(
