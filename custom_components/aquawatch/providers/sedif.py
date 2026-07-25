@@ -1,10 +1,9 @@
 """SEDIF (L'Eau d'Île-de-France) water provider for AquaWatch.
 
-Ported from https://github.com/TimoPtr/pyeauidf (Apache-2.0), which reverse
-engineered the Salesforce Aura API used by the SEDIF customer portal. The
-portal only exposes DAILY totals (TYPE_PAS="JOURNEE") — there is no hourly
-granularity, which is why leak detection (detection.py) works on sustained
-daily consumption rather than a night-time flow window.
+Reverse engineers the Salesforce Aura API used by the SEDIF customer
+portal. The portal only exposes DAILY totals (TYPE_PAS="JOURNEE") — there
+is no hourly granularity, which is why leak detection (detection.py) works
+on sustained daily consumption rather than a night-time flow window.
 """
 
 from __future__ import annotations
@@ -169,7 +168,7 @@ class SedifProvider(WaterProvider):
         if not self._external_session:
             await self._session.close()
 
-    # -- internal helpers ported from pyeauidf's client.py --------------
+    # -- internal helpers -----------------------------------------------
 
     async def _async_ensure_ssl_context(self) -> ssl.SSLContext:
         if self._ssl_context is None:

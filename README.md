@@ -4,11 +4,10 @@
 
 # AquaWatch
 
-Intégration Home Assistant (HACS) pour le suivi de la consommation d'eau,
-inspirée de [pyeauidf](https://github.com/TimoPtr/pyeauidf) mais bien plus
-complète : détection de fuite/anomalie, prévisions, éco-score, intégration
-au tableau de bord Énergie, et une architecture prête pour plusieurs
-fournisseurs d'eau français.
+Intégration Home Assistant (HACS) pour le suivi de la consommation d'eau :
+détection de fuite/anomalie, prévisions, éco-score, intégration au tableau
+de bord Énergie, et une architecture prête pour plusieurs fournisseurs
+d'eau français.
 
 ## Fournisseurs
 
@@ -67,4 +66,4 @@ notification mobile actionable en cas de fuite suspectée.
 
 ## Licence
 
-Apache-2.0, comme le projet dont ce dépôt s'inspire (pyeauidf).
+Apache-2.0.

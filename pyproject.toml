@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aquawatch"
 version = "0.1.0"
-description = "Home Assistant integration for French water utilities, inspired by pyeauidf"
+description = "Home Assistant integration for French water utilities"
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.9",
