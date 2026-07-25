@@ -87,3 +87,14 @@ def async_setup_services(hass: HomeAssistant) -> None:
         schema=_SERVICE_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
+
+
+def async_unload_services(hass: HomeAssistant) -> None:
+    """Remove AquaWatch services once no config entries remain."""
+    global _services_registered
+    if not _services_registered:
+        return
+    _services_registered = False
+    hass.services.async_remove(DOMAIN, SERVICE_FORCE_REFRESH)
+    hass.services.async_remove(DOMAIN, SERVICE_RECALIBRATE_BASELINE)
+    hass.services.async_remove(DOMAIN, SERVICE_EXPORT_CSV)

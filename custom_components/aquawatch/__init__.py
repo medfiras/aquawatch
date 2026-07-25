@@ -16,7 +16,7 @@ from .coordinator import AquaWatchCoordinator, async_fetch_with_shrinking_window
 from .models import ConsumptionBatch
 from .providers import get_provider_class
 from .providers.exceptions import AuthError, ProviderError
-from .services import async_setup_services
+from .services import async_setup_services, async_unload_services
 
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
@@ -57,6 +57,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        if not hass.data[DOMAIN]:
+            async_unload_services(hass)
     return unloaded
 
 
