@@ -43,3 +43,24 @@ def test_manifest_and_hacs_json_are_valid() -> None:
     hacs = json.loads((_ROOT / "hacs.json").read_text())
     assert manifest["domain"] == "aquawatch"
     assert hacs["name"] == "AquaWatch"
+
+
+def test_brand_icons_exist_at_correct_sizes_with_transparency() -> None:
+    from PIL import Image
+
+    brand_dir = _ROOT / "brands" / "custom_integrations" / "aquawatch"
+    expected_sizes = {
+        "icon.png": (256, 256),
+        "icon@2x.png": (512, 512),
+        "logo.png": (256, 256),
+        "logo@2x.png": (512, 512),
+    }
+    for filename, size in expected_sizes.items():
+        path = brand_dir / filename
+        assert path.is_file(), f"missing {path}"
+        with Image.open(path) as im:
+            assert im.size == size
+            assert im.mode == "RGBA"
+            # Corner pixel must be fully transparent (icon on transparent
+            # background, not a solid-color square).
+            assert im.getpixel((0, 0))[3] == 0

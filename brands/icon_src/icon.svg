@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Water drop -->
+  <path
+    d="M128,14
+       C128,14 48,120 48,168
+       C48,212.18 83.82,248 128,248
+       C172.18,248 208,212.18 208,168
+       C208,120 128,14 128,14 Z"
+    fill="#1976D2"
+  />
+
+  <!-- "Watch" eye: light almond shape -->
+  <path
+    d="M78,178
+       C96,150 160,150 178,178
+       C160,206 96,206 78,178 Z"
+    fill="#E3F2FD"
+  />
+
+  <!-- Pupil -->
+  <circle cx="128" cy="178" r="20" fill="#0D47A1"/>
+
+  <!-- Highlight -->
+  <circle cx="121" cy="171" r="6" fill="#FFFFFF"/>
+</svg>

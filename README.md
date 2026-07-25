@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="brands/custom_integrations/aquawatch/icon.png" width="96" height="96" alt="Icône AquaWatch">
+</p>
+
 # AquaWatch
 
 Intégration Home Assistant (HACS) pour le suivi de la consommation d'eau,
