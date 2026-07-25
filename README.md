@@ -108,7 +108,9 @@ dérivées de l'historique des relevés déjà récupérés :
 
 ### Via HACS
 
-1. HACS > Intégrations > ⋮ > Dépôts personnalisés > ajouter ce dépôt
+[![Ouvrez votre instance Home Assistant et ouvrez ce dépôt dans le Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=medfiras&repository=aquawatch&category=integration)
+
+1. Cliquez sur le bouton ci-dessus, ou : HACS > Intégrations > ⋮ > Dépôts personnalisés > ajouter ce dépôt
 2. Installer "AquaWatch"
 3. Redémarrer Home Assistant
 4. Paramètres > Appareils et services > Ajouter une intégration > AquaWatch
