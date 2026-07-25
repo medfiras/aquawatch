@@ -69,6 +69,41 @@ Le capteur **Index du compteur** porte aussi des attributs supplémentaires :
 | Budget dépassé | La projection de fin de mois dépasse le budget configuré (€ ou m³) |
 | Données périmées | Aucun nouveau relevé reçu depuis plusieurs jours *(diagnostic)* |
 
+## Origine des données
+
+### Directement depuis l'API du fournisseur
+
+| Donnée | Champ source (SEDIF) |
+|---|---|
+| Consommation du jour / de la veille | `CONSOMMATION` |
+| Index du compteur | `VALEUR_INDEX` |
+| Prix au m³ | `prixMoyenEau` |
+| Solde du compte | `solde` |
+| Statut du contrat *(attribut)* | `contrat.Statut` |
+| Numéro de contrat | `contrat.Name` |
+| Numéro de série du compteur *(attribut)* | `compteInfo[0].NUM_COMPTEUR` |
+| Estimé/réel *(visible via le service `export_csv`)* | `FLAG_ESTIMATION` |
+
+L'adresse *(attribut)* est une simple concaténation de trois champs bruts
+(`SITE_Rue`, `SITE_CP`, `SITE_Commune`), sans logique de calcul.
+
+### Calculées localement par AquaWatch
+
+Aucune de ces valeurs n'existe dans la réponse du fournisseur — elles sont
+dérivées de l'historique des relevés déjà récupérés :
+
+| Capteur | Méthode de calcul |
+|---|---|
+| Coût du jour / du mois en cours | `litres ÷ 1000 × prix au m³` |
+| Prévision volume/coût fin de mois | Moyenne pondérée 60 % (moyenne du mois en cours) / 40 % (moyenne des 3 derniers jours), extrapolée sur le nombre de jours du mois |
+| Variation vs semaine/mois/année précédente | Écart en % entre la somme des N derniers jours et celle des N jours précédents (N = 7/30/365) |
+| Éco-score, grade, conseil | Moyenne de litres/jour/personne sur 30 jours, comparée aux repères ADEME (≤80 L = excellent, ≥150 L = médiocre) |
+| Fuite suspectée | Consommation soutenue au-dessus d'une baseline de 14 jours, sur plusieurs jours consécutifs (seuils configurables) |
+| Anomalie détectée | Z-score du dernier relevé par rapport à la moyenne et à l'écart-type des 14 jours précédents |
+| Budget dépassé | Comparaison de la prévision de fin de mois au budget configuré |
+| Données périmées | Nombre de jours écoulés depuis le dernier relevé, comparé à un seuil |
+| Dernière synchronisation | Date du relevé le plus récent en mémoire |
+
 ## Installation
 
 ### Via HACS
