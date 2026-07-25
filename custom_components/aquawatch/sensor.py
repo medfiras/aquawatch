@@ -17,7 +17,7 @@ from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import CONF_CONTRACT_ID, DOMAIN
 from .coordinator import AquaWatchCoordinator, AquaWatchData
 
 
@@ -153,6 +153,7 @@ class AquaWatchSensor(CoordinatorEntity[AquaWatchCoordinator], SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+        self._contract_id = entry.data[CONF_CONTRACT_ID]
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
@@ -170,4 +171,6 @@ class AquaWatchSensor(CoordinatorEntity[AquaWatchCoordinator], SensorEntity):
                 "grade": self.coordinator.data.eco_grade,
                 "conseil": self.coordinator.data.eco_tip,
             }
+        if self.entity_description.key == "index_compteur":
+            return {"numero_contrat": self._contract_id}
         return None

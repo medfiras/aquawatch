@@ -139,18 +139,8 @@ class AquaWatchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured()
 
-        # Only disambiguate with the contract label when the account
-        # actually has more than one contract -- for the common single
-        # contract case, appending an opaque label adds noise with nothing
-        # to distinguish it from.
-        title = (
-            f"{self._provider_display_name} — {contract.label}"
-            if len(self._contracts) > 1
-            else self._provider_display_name
-        )
-
         return self.async_create_entry(
-            title=title,
+            title=f"{self._provider_display_name} — {contract.label}",
             data={
                 CONF_PROVIDER: self._provider_id,
                 CONF_EMAIL: self._email,

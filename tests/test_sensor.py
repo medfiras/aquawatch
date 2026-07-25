@@ -110,3 +110,15 @@ def test_cout_mois_courant_and_prevision_fin_mois_cout_can_differ() -> None:
 def test_sensor_has_entity_name_so_ha_does_not_prefix_device_name_per_row() -> None:
     entity = AquaWatchSensor.__new__(AquaWatchSensor)
     assert entity.has_entity_name is True
+
+
+def test_index_compteur_exposes_contract_id_attribute() -> None:
+    coordinator = _fake_coordinator(_sample_data())
+    description = _find_description("index_compteur")
+    entity = AquaWatchSensor.__new__(AquaWatchSensor)
+    entity.coordinator = coordinator
+    entity.entity_description = description
+    entity._contract_id = "GlFgcMCyMGXyUMkDOlvW7bFbuwDmEX8u0HOqKAX55126QRP4vVNhL+uknrF7USN3"
+    assert entity.extra_state_attributes == {
+        "numero_contrat": "GlFgcMCyMGXyUMkDOlvW7bFbuwDmEX8u0HOqKAX55126QRP4vVNhL+uknrF7USN3"
+    }
