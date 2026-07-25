@@ -96,5 +96,10 @@
       "title": "The provider's portal has changed",
       "description": "AquaWatch can no longer read data from the portal. Its page structure has likely changed. Check the project's issue tracker."
     }
+  },
+  "exceptions": {
+    "unknown_entry_id": {
+      "message": "No AquaWatch entry with id {entry_id}"
+    }
   }
 }

@@ -96,5 +96,10 @@
       "title": "Le portail du fournisseur a changé",
       "description": "AquaWatch n'arrive plus à lire les données du portail. La structure du site a probablement changé. Consultez le suivi des problèmes du projet."
     }
+  },
+  "exceptions": {
+    "unknown_entry_id": {
+      "message": "Aucune entrée AquaWatch avec l'id {entry_id}"
+    }
   }
 }

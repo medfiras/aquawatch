@@ -12,6 +12,7 @@ from homeassistant.core import (
     ServiceResponse,
     SupportsResponse,
 )
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
@@ -39,8 +40,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
         entry_id = call.data[ATTR_ENTRY_ID]
         coordinator = hass.data.get(DOMAIN, {}).get(entry_id)
         if coordinator is None:
-            msg = f"Aucune entrée AquaWatch avec l'id {entry_id}"
-            raise vol.Invalid(msg)
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_entry_id",
+                translation_placeholders={"entry_id": entry_id},
+            )
         return coordinator
 
     async def _handle_force_refresh(call: ServiceCall) -> None:
