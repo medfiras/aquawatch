@@ -185,16 +185,17 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                 self.data.meter_serial_number if self.data else None
             )
             if hasattr(provider, "async_get_raw_contract_details"):
+                # Best-effort in the fullest sense: ANY failure here (a
+                # network hiccup, a malformed/unexpected response shape,
+                # not just a recognized ProviderError) must fall back to
+                # last-known values rather than propagate, since an
+                # uncaught exception here would abort _async_update_data
+                # entirely -- including the primary consumption fetch --
+                # and mark every entity on this coordinator "unavailable".
                 try:
                     raw_details = await provider.async_get_raw_contract_details(
                         self._contract_id
                     )
-                except ProviderError:
-                    _LOGGER.debug(
-                        "Could not refresh contract metadata "
-                        "(balance/status/address) this cycle"
-                    )
-                else:
                     contrat = raw_details.get("contrat", {})
                     account_balance = raw_details.get("solde", account_balance)
                     contract_status = contrat.get("Statut", contract_status)
@@ -204,6 +205,12 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                         meter_serial_number = compte_info[0].get(
                             "NUM_COMPTEUR", meter_serial_number
                         )
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "Could not refresh contract metadata "
+                        "(balance/status/address) this cycle",
+                        exc_info=True,
+                    )
 
             today = datetime.now().date()
 

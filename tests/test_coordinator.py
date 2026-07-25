@@ -733,3 +733,69 @@ def test_format_site_address_handles_missing_parts() -> None:
     assert _format_site_address({"SITE_Rue": "85 AV DE VERSAILLES"}) == "85 AV DE VERSAILLES"
     assert _format_site_address({"SITE_CP": "93220", "SITE_Commune": "GAGNY"}) == "93220 GAGNY"
     assert _format_site_address({}) is None
+
+
+async def test_update_survives_non_provider_error_during_metadata_refresh(hass) -> None:
+    """Reproduces the real-world bug: a non-ProviderError exception (e.g. a
+    raw network error or a malformed response) during the best-effort
+    metadata refresh must NOT propagate and take down the whole update --
+    that would mark every entity on this coordinator "unavailable", which is
+    exactly what was observed against a real account.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.models import ConsumptionBatch
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    batch = ConsumptionBatch(records=[_record(date.today(), 150.0)], price_per_m3=4.0)
+
+    fake_provider = AsyncMock()
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(return_value=batch)
+    # A raw, non-ProviderError exception -- e.g. a network timeout or a
+    # malformed response causing an AttributeError/KeyError deep inside
+    # the real provider. Before the fix, only ProviderError was caught
+    # here, so this would propagate and fail the whole update.
+    fake_provider.async_get_raw_contract_details = AsyncMock(
+        side_effect=RuntimeError("connection reset by peer")
+    )
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={},
+        ),
+        patch("custom_components.aquawatch.coordinator.statistics.async_push_records"),
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        # Must not raise -- the primary consumption fetch must still succeed.
+        data = await coordinator._async_update_data()
+
+    assert data is not None
+    assert data.records == batch.records
+    assert data.account_balance is None
