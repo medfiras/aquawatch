@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.aquawatch.coordinator import (
     _HISTORY_WINDOW_DAYS,
+    _format_site_address,
     _percent_change,
     async_fetch_with_shrinking_window,
 )
@@ -73,6 +74,12 @@ async def test_scraping_error_creates_repair_issue(hass) -> None:
     entry.add_to_hass(hass)
 
     fake_provider = AsyncMock()
+    # This test doesn't care about contract-metadata enrichment; a bare
+    # AsyncMock() auto-creates ANY attribute (so hasattr() would wrongly
+    # report support for async_get_raw_contract_details) -- delete it so
+    # the coordinator correctly treats this fake as not supporting it,
+    # same as a real provider that doesn't implement the method.
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_authenticate = AsyncMock()
     fake_provider.async_get_daily_consumption = AsyncMock(
         side_effect=ScrapingError("layout changed")
@@ -135,6 +142,12 @@ async def test_update_pushes_new_batch_into_statistics_with_threaded_running_sum
     batch2 = ConsumptionBatch(records=[_record(date(2024, 3, 16), 200.0)], price_per_m3=4.0)
 
     fake_provider = AsyncMock()
+    # This test doesn't care about contract-metadata enrichment; a bare
+    # AsyncMock() auto-creates ANY attribute (so hasattr() would wrongly
+    # report support for async_get_raw_contract_details) -- delete it so
+    # the coordinator correctly treats this fake as not supporting it,
+    # same as a real provider that doesn't implement the method.
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_authenticate = AsyncMock()
     fake_provider.async_get_daily_consumption = AsyncMock(side_effect=[batch1, batch2])
     fake_provider.async_close = AsyncMock()
@@ -218,6 +231,12 @@ async def test_restart_resumes_from_last_statistic_date_not_full_history_window(
     )
 
     fake_provider = AsyncMock()
+    # This test doesn't care about contract-metadata enrichment; a bare
+    # AsyncMock() auto-creates ANY attribute (so hasattr() would wrongly
+    # report support for async_get_raw_contract_details) -- delete it so
+    # the coordinator correctly treats this fake as not supporting it,
+    # same as a real provider that doesn't implement the method.
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_authenticate = AsyncMock()
     fake_provider.async_get_daily_consumption = AsyncMock(return_value=fake_batch)
     fake_provider.async_close = AsyncMock()
@@ -300,7 +319,14 @@ def test_build_data_computes_cost_month_to_date(hass) -> None:
         _record(date(2024, 2, 28), 500.0),  # previous month, must be excluded
     ]
 
-    data = coordinator._build_data(today, price_per_m3=4.0)
+    data = coordinator._build_data(
+        today,
+        price_per_m3=4.0,
+        account_balance=None,
+        contract_status=None,
+        site_address=None,
+        meter_serial_number=None,
+    )
 
     assert data.cost_month_to_date == pytest.approx((100.0 + 200.0) / 1000 * 4.0)
 
@@ -312,7 +338,14 @@ def test_build_data_cost_month_to_date_none_without_current_month_records(hass) 
         _record(date(2024, 2, 28), 500.0),
     ]
 
-    data = coordinator._build_data(today, price_per_m3=4.0)
+    data = coordinator._build_data(
+        today,
+        price_per_m3=4.0,
+        account_balance=None,
+        contract_status=None,
+        site_address=None,
+        meter_serial_number=None,
+    )
 
     assert data.cost_month_to_date is None
 
@@ -366,6 +399,12 @@ async def test_seed_from_backfill_prevents_reduplicate_push_on_first_refresh(
     ]
 
     fake_provider = AsyncMock()
+    # This test doesn't care about contract-metadata enrichment; a bare
+    # AsyncMock() auto-creates ANY attribute (so hasattr() would wrongly
+    # report support for async_get_raw_contract_details) -- delete it so
+    # the coordinator correctly treats this fake as not supporting it,
+    # same as a real provider that doesn't implement the method.
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_authenticate = AsyncMock()
     fake_provider.async_get_daily_consumption = AsyncMock()
     fake_provider.async_close = AsyncMock()
@@ -399,6 +438,12 @@ async def test_fetch_with_shrinking_window_succeeds_on_later_attempt() -> None:
         records=[_record(today, 100.0)], price_per_m3=4.0
     )
     fake_provider = AsyncMock()
+    # This test doesn't care about contract-metadata enrichment; a bare
+    # AsyncMock() auto-creates ANY attribute (so hasattr() would wrongly
+    # report support for async_get_raw_contract_details) -- delete it so
+    # the coordinator correctly treats this fake as not supporting it,
+    # same as a real provider that doesn't implement the method.
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_get_daily_consumption = AsyncMock(
         side_effect=[
             ScrapingError("no data that far back"),
@@ -425,6 +470,12 @@ async def test_fetch_with_shrinking_window_raises_last_error_if_all_fail() -> No
     today = date(2026, 7, 25)
     last_error = ScrapingError("even 7 days back has nothing")
     fake_provider = AsyncMock()
+    # This test doesn't care about contract-metadata enrichment; a bare
+    # AsyncMock() auto-creates ANY attribute (so hasattr() would wrongly
+    # report support for async_get_raw_contract_details) -- delete it so
+    # the coordinator correctly treats this fake as not supporting it,
+    # same as a real provider that doesn't implement the method.
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_get_daily_consumption = AsyncMock(
         side_effect=[ScrapingError("no data"), last_error]
     )
@@ -475,6 +526,12 @@ async def test_incremental_scraping_error_does_not_raise_or_create_repair_issue(
     ).timestamp()
 
     fake_provider = AsyncMock()
+    # This test doesn't care about contract-metadata enrichment; a bare
+    # AsyncMock() auto-creates ANY attribute (so hasattr() would wrongly
+    # report support for async_get_raw_contract_details) -- delete it so
+    # the coordinator correctly treats this fake as not supporting it,
+    # same as a real provider that doesn't implement the method.
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_authenticate = AsyncMock()
     fake_provider.async_get_daily_consumption = AsyncMock(
         side_effect=ScrapingError("no reading published for this date yet")
@@ -511,3 +568,168 @@ async def test_incremental_scraping_error_does_not_raise_or_create_repair_issue(
     mock_issue.assert_not_called()
     mock_push.assert_not_called()
     assert data is not None
+
+
+async def test_update_enriches_data_with_contract_metadata_when_supported(hass) -> None:
+    """When the provider supports it, balance/status/address/serial are
+    fetched via async_get_raw_contract_details and parsed into AquaWatchData.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.models import ConsumptionBatch
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    batch = ConsumptionBatch(records=[_record(date(2024, 3, 15), 150.0)], price_per_m3=4.0)
+    raw_details = {
+        "solde": -12.5,
+        "contrat": {
+            "Statut": "Actif",
+            "SITE_Rue": "85 AV DE VERSAILLES",
+            "SITE_CP": "93220",
+            "SITE_Commune": "GAGNY",
+        },
+        "compteInfo": [{"NUM_COMPTEUR": "I26IA206176"}],
+    }
+
+    fake_provider = AsyncMock()
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(return_value=batch)
+    fake_provider.async_get_raw_contract_details = AsyncMock(return_value=raw_details)
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={},
+        ),
+        patch("custom_components.aquawatch.coordinator.statistics.async_push_records"),
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        data = await coordinator._async_update_data()
+
+    fake_provider.async_get_raw_contract_details.assert_awaited_once_with("CTR-1")
+    assert data.account_balance == -12.5
+    assert data.contract_status == "Actif"
+    assert data.site_address == "85 AV DE VERSAILLES, 93220 GAGNY"
+    assert data.meter_serial_number == "I26IA206176"
+
+
+async def test_update_keeps_previous_metadata_when_refresh_fails(hass) -> None:
+    """A ScrapingError on the metadata enrichment call must not raise or
+    wipe out previously known balance/status/address/serial values.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator, AquaWatchData
+    from custom_components.aquawatch.models import ConsumptionBatch
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    batch = ConsumptionBatch(records=[_record(date(2024, 3, 15), 150.0)], price_per_m3=4.0)
+
+    fake_provider = AsyncMock()
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(return_value=batch)
+    fake_provider.async_get_raw_contract_details = AsyncMock(
+        side_effect=ScrapingError("temporary glitch")
+    )
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={},
+        ),
+        patch("custom_components.aquawatch.coordinator.statistics.async_push_records"),
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        coordinator.data = AquaWatchData(
+            records=[],
+            price_per_m3=4.0,
+            last_sync=datetime(2024, 3, 14, 6, 0),
+            forecast_volume_m3=None,
+            forecast_cost=None,
+            eco_score=50,
+            eco_grade="D",
+            eco_tip="",
+            vs_last_week_pct=None,
+            vs_last_month_pct=None,
+            vs_last_year_pct=None,
+            leak_suspected=False,
+            anomaly_detected=False,
+            budget_exceeded=False,
+            data_stale=False,
+            cost_month_to_date=None,
+            account_balance=-3.0,
+            contract_status="Actif",
+            site_address="85 AV DE VERSAILLES, 93220 GAGNY",
+            meter_serial_number="I26IA206176",
+        )
+
+        data = await coordinator._async_update_data()
+
+    assert data.account_balance == -3.0
+    assert data.contract_status == "Actif"
+    assert data.site_address == "85 AV DE VERSAILLES, 93220 GAGNY"
+    assert data.meter_serial_number == "I26IA206176"
+
+
+def test_format_site_address_joins_all_parts() -> None:
+    contrat = {
+        "SITE_Rue": "85 AV DE VERSAILLES",
+        "SITE_CP": "93220",
+        "SITE_Commune": "GAGNY",
+    }
+    assert _format_site_address(contrat) == "85 AV DE VERSAILLES, 93220 GAGNY"
+
+
+def test_format_site_address_handles_missing_parts() -> None:
+    assert _format_site_address({"SITE_Rue": "85 AV DE VERSAILLES"}) == "85 AV DE VERSAILLES"
+    assert _format_site_address({"SITE_CP": "93220", "SITE_Commune": "GAGNY"}) == "93220 GAGNY"
+    assert _format_site_address({}) is None

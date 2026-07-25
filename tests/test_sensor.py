@@ -35,6 +35,10 @@ def _sample_data() -> AquaWatchData:
         budget_exceeded=False,
         data_stale=False,
         cost_month_to_date=9.0,
+        account_balance=-12.5,
+        contract_status="Actif",
+        site_address="85 AV DE VERSAILLES, 93220 GAGNY",
+        meter_serial_number="I26IA206176",
     )
 
 
@@ -112,14 +116,28 @@ def test_sensor_has_entity_name_so_ha_does_not_prefix_device_name_per_row() -> N
     assert entity.has_entity_name is True
 
 
-def test_index_compteur_exposes_contract_number_attribute() -> None:
+def test_index_compteur_exposes_contract_and_meter_attributes() -> None:
     coordinator = _fake_coordinator(_sample_data())
     description = _find_description("index_compteur")
     entity = AquaWatchSensor.__new__(AquaWatchSensor)
     entity.coordinator = coordinator
     entity.entity_description = description
     entity._contract_number = "Contrat 9257681"
-    assert entity.extra_state_attributes == {"numero_contrat": "Contrat 9257681"}
+    assert entity.extra_state_attributes == {
+        "numero_contrat": "Contrat 9257681",
+        "numero_serie_compteur": "I26IA206176",
+        "adresse": "85 AV DE VERSAILLES, 93220 GAGNY",
+        "statut_contrat": "Actif",
+    }
+
+
+def test_solde_compte_reads_account_balance() -> None:
+    coordinator = _fake_coordinator(_sample_data())
+    description = _find_description("solde_compte")
+    entity = AquaWatchSensor.__new__(AquaWatchSensor)
+    entity.coordinator = coordinator
+    entity.entity_description = description
+    assert entity.native_value == -12.5
 
 
 def test_init_uses_contract_number_when_present() -> None:

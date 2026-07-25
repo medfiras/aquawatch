@@ -49,6 +49,10 @@ def _fake_coordinator() -> MagicMock:
         budget_exceeded=False,
         data_stale=False,
         cost_month_to_date=None,
+        account_balance=None,
+        contract_status=None,
+        site_address=None,
+        meter_serial_number=None,
     )
     return coordinator
 

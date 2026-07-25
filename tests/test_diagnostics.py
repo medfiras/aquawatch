@@ -47,6 +47,10 @@ async def test_diagnostics_redacts_credentials(hass) -> None:
         budget_exceeded=False,
         data_stale=False,
         cost_month_to_date=9.0,
+        account_balance=None,
+        contract_status=None,
+        site_address=None,
+        meter_serial_number=None,
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 

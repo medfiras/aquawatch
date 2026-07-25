@@ -110,6 +110,26 @@ class AquaWatchData:
     budget_exceeded: bool
     data_stale: bool
     cost_month_to_date: float | None
+    account_balance: float | None
+    contract_status: str | None
+    site_address: str | None
+    meter_serial_number: str | None
+
+
+def _format_site_address(contrat: dict) -> str | None:
+    """Format a contract's SITE_* fields into a single address string."""
+    rue = contrat.get("SITE_Rue")
+    cp = contrat.get("SITE_CP")
+    commune = contrat.get("SITE_Commune")
+
+    parts = []
+    if rue:
+        parts.append(rue)
+    cp_commune = " ".join(p for p in (cp, commune) if p)
+    if cp_commune:
+        parts.append(cp_commune)
+
+    return ", ".join(parts) if parts else None
 
 
 class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
@@ -149,6 +169,41 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                 )
             except AuthError as err:
                 raise ConfigEntryAuthFailed(str(err)) from err
+
+            # Best-effort refresh of contract metadata (balance, status,
+            # site address, meter serial number) -- a single extra call,
+            # independent of whether there's new consumption data to fetch
+            # this cycle. Not part of the WaterProvider interface (SEDIF-
+            # specific), so skipped entirely for providers that don't
+            # support it. Falls back to the previous cycle's values if the
+            # call fails, rather than blocking the whole update over a
+            # secondary enrichment call.
+            account_balance = self.data.account_balance if self.data else None
+            contract_status = self.data.contract_status if self.data else None
+            site_address = self.data.site_address if self.data else None
+            meter_serial_number = (
+                self.data.meter_serial_number if self.data else None
+            )
+            if hasattr(provider, "async_get_raw_contract_details"):
+                try:
+                    raw_details = await provider.async_get_raw_contract_details(
+                        self._contract_id
+                    )
+                except ProviderError:
+                    _LOGGER.debug(
+                        "Could not refresh contract metadata "
+                        "(balance/status/address) this cycle"
+                    )
+                else:
+                    contrat = raw_details.get("contrat", {})
+                    account_balance = raw_details.get("solde", account_balance)
+                    contract_status = contrat.get("Statut", contract_status)
+                    site_address = _format_site_address(contrat) or site_address
+                    compte_info = raw_details.get("compteInfo", [])
+                    if compte_info:
+                        meter_serial_number = compte_info[0].get(
+                            "NUM_COMPTEUR", meter_serial_number
+                        )
 
             today = datetime.now().date()
 
@@ -269,9 +324,24 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
             key=lambda r: r.record_date,
         )
 
-        return self._build_data(today, price_per_m3)
+        return self._build_data(
+            today,
+            price_per_m3,
+            account_balance,
+            contract_status,
+            site_address,
+            meter_serial_number,
+        )
 
-    def _build_data(self, today: date, price_per_m3: float) -> AquaWatchData:
+    def _build_data(
+        self,
+        today: date,
+        price_per_m3: float,
+        account_balance: float | None,
+        contract_status: str | None,
+        site_address: str | None,
+        meter_serial_number: str | None,
+    ) -> AquaWatchData:
         options = self.entry.options
         records = self._records
 
@@ -371,6 +441,10 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
             budget_exceeded=budget_exceeded,
             data_stale=data_stale,
             cost_month_to_date=cost_month_to_date,
+            account_balance=account_balance,
+            contract_status=contract_status,
+            site_address=site_address,
+            meter_serial_number=meter_serial_number,
         )
 
     async def async_recalibrate_baseline(self) -> None:

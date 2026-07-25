@@ -119,6 +119,13 @@ SENSOR_DESCRIPTIONS: tuple[AquaWatchSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: d.last_sync,
     ),
+    AquaWatchSensorDescription(
+        key="solde_compte",
+        translation_key="solde_compte",
+        native_unit_of_measurement="EUR",
+        device_class=SensorDeviceClass.MONETARY,
+        value_fn=lambda d: d.account_balance,
+    ),
 )
 
 
@@ -176,5 +183,11 @@ class AquaWatchSensor(CoordinatorEntity[AquaWatchCoordinator], SensorEntity):
                 "conseil": self.coordinator.data.eco_tip,
             }
         if self.entity_description.key == "index_compteur":
-            return {"numero_contrat": self._contract_number}
+            data = self.coordinator.data
+            return {
+                "numero_contrat": self._contract_number,
+                "numero_serie_compteur": data.meter_serial_number,
+                "adresse": data.site_address,
+                "statut_contrat": data.contract_status,
+            }
         return None

@@ -45,6 +45,7 @@ async def test_setup_entry_backfills_statistics_and_creates_coordinator(hass) ->
     entry.add_to_hass(hass)
 
     fake_provider = AsyncMock()
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_authenticate = AsyncMock()
     fake_provider.async_get_daily_consumption = AsyncMock(return_value=_fake_batch())
     fake_provider.async_close = AsyncMock()
@@ -104,6 +105,7 @@ async def test_unload_entry_removes_coordinator(hass) -> None:
     entry.add_to_hass(hass)
 
     fake_provider = AsyncMock()
+    del fake_provider.async_get_raw_contract_details
     fake_provider.async_authenticate = AsyncMock()
     fake_provider.async_get_daily_consumption = AsyncMock(return_value=_fake_batch())
     fake_provider.async_close = AsyncMock()
