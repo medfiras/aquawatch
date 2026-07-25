@@ -222,3 +222,29 @@ async def test_list_contracts_label_is_shortened_not_raw_id() -> None:
     assert contracts[0].label == f"Contrat …{long_id[-8:]}"
     assert len(contracts[0].label) < 20
     await provider.async_close()
+
+
+async def test_async_get_raw_contract_details_returns_unprocessed_response() -> None:
+    provider = await _authenticated_provider()
+    raw_response = {
+        "actions": [
+            {
+                "state": "SUCCESS",
+                "returnValue": {
+                    "returnValue": {
+                        "numeroContrat": "9257681",
+                        "compteInfo": [{"ELEMB": "CTR-001", "ELEMA": "PDS-001"}],
+                    },
+                },
+            },
+        ],
+    }
+    with aioresponses() as m:
+        m.post(AURA_URL_RE, payload=raw_response, status=200)
+        result = await provider.async_get_raw_contract_details("contract-1")
+
+    assert result == {
+        "numeroContrat": "9257681",
+        "compteInfo": [{"ELEMB": "CTR-001", "ELEMA": "PDS-001"}],
+    }
+    await provider.async_close()

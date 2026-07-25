@@ -130,6 +130,17 @@ class SedifProvider(WaterProvider):
             for cid in contract_ids
         ]
 
+    async def async_get_raw_contract_details(self, contract_id: str) -> dict[str, Any]:
+        """Return the unprocessed getContratDetails response (for debugging).
+
+        Not part of the WaterProvider interface -- SEDIF-specific, used by
+        diagnostics.py to help identify which field holds the human-readable
+        contract number (distinct from the opaque contract_id returned by
+        listCurrentUserActiveContrats).
+        """
+        await self._ensure_authenticated()
+        return await self._get_contract_details(contract_id)
+
     async def async_get_daily_consumption(
         self, contract_id: str, start: date, end: date
     ) -> ConsumptionBatch:
