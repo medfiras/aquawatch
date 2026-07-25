@@ -9,6 +9,7 @@ daily consumption rather than a night-time flow window.
 
 from __future__ import annotations
 
+import asyncio
 import enum
 import json
 import logging
@@ -100,7 +101,12 @@ class SedifProvider(WaterProvider):
     def __init__(self, session: aiohttp.ClientSession | None = None) -> None:
         self._external_session = session is not None
         self._session = session or aiohttp.ClientSession()
-        self._ssl_context = _build_ssl_context()
+        # Built lazily via an executor on first use: constructing an
+        # SSLContext does blocking file I/O (reading the certifi bundle and
+        # our bundled intermediate cert), which must not happen directly on
+        # the event loop -- HA's own blocking-call detector flags it
+        # otherwise.
+        self._ssl_context: ssl.SSLContext | None = None
         self._default_headers = {
             "User-Agent": _USER_AGENT,
             "Origin": _BASE_URL,
@@ -165,9 +171,16 @@ class SedifProvider(WaterProvider):
 
     # -- internal helpers ported from pyeauidf's client.py --------------
 
+    async def _async_ensure_ssl_context(self) -> ssl.SSLContext:
+        if self._ssl_context is None:
+            loop = asyncio.get_running_loop()
+            self._ssl_context = await loop.run_in_executor(None, _build_ssl_context)
+        return self._ssl_context
+
     async def _get_login_context(self) -> None:
+        ssl_context = await self._async_ensure_ssl_context()
         async with self._session.get(
-            _LOGIN_URL, ssl=self._ssl_context, headers=self._default_headers
+            _LOGIN_URL, ssl=ssl_context, headers=self._default_headers
         ) as resp:
             resp.raise_for_status()
             html = await resp.text()
@@ -238,8 +251,9 @@ class SedifProvider(WaterProvider):
             **self._default_headers,
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         }
+        ssl_context = await self._async_ensure_ssl_context()
         async with self._session.post(
-            url, data=data, headers=headers, ssl=self._ssl_context
+            url, data=data, headers=headers, ssl=ssl_context
         ) as resp:
             resp.raise_for_status()
             text = await resp.text()
@@ -347,13 +361,14 @@ class SedifProvider(WaterProvider):
             msg = "No redirect URL in login response"
             raise AuthError(msg)
 
+        ssl_context = await self._async_ensure_ssl_context()
         async with self._session.get(
-            redirect_url, ssl=self._ssl_context, headers=self._default_headers
+            redirect_url, ssl=ssl_context, headers=self._default_headers
         ) as resp:
             resp.raise_for_status()
 
         async with self._session.get(
-            f"{_BASE_URL}/s/", ssl=self._ssl_context, headers=self._default_headers
+            f"{_BASE_URL}/s/", ssl=ssl_context, headers=self._default_headers
         ) as resp:
             resp.raise_for_status()
             html = await resp.text()

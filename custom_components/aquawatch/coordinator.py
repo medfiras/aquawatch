@@ -41,7 +41,7 @@ from .const import (
 from .detection import detect_statistical_anomaly, detect_sustained_leak
 from .ecoscore import compute_eco_score
 from .forecast import forecast_month_end_cost, forecast_month_end_volume_m3
-from .models import ConsumptionRecord
+from .models import ConsumptionBatch, ConsumptionRecord
 from .providers import get_provider_class
 from .providers.exceptions import AuthError, ProviderError, ScrapingError
 from .repairs import async_create_scraping_broken_issue
@@ -50,15 +50,44 @@ from .statistics import statistic_id_for_entry
 _LOGGER = logging.getLogger(__name__)
 
 _HISTORY_WINDOW_DAYS = 740
-# SEDIF's portal caps queryable history at ~2 years (confirmed empirically:
-# requesting further back than this triggers a server-side
-# System.NullPointerException in their own Apex wrapper conversion code,
-# rather than an empty/graceful response). Keep the cold-start query window
-# under that ceiling, distinct from _HISTORY_WINDOW_DAYS (which governs how
-# much history we RETAIN in memory once we have it, for vs_last_year_pct).
-_MAX_QUERY_WINDOW_DAYS = 730
 _BASELINE_DAYS = 14
 _STALE_AFTER_DAYS = 3
+
+# SEDIF's backend raises a server-side System.NullPointerException instead
+# of a graceful empty/partial response when a requested date range predates
+# the data actually available for a given account -- confirmed empirically
+# against two different real accounts, at two different code paths
+# (LTN015_ICL_ContratConsoHisto.getData itself, and its
+# convertConsommationToWrapper helper). Exactly how far back an account's
+# data goes varies per account/meter and cannot be known in advance, so
+# both the coordinator's cold-start fetch and the one-time historical
+# backfill (see __init__.py) retry with progressively smaller windows
+# instead of assuming a single fixed cutoff.
+COLD_START_ATTEMPTS_DAYS = (365 * 2, 365, 180, 90, 30, 7)
+
+
+async def async_fetch_with_shrinking_window(
+    provider: "WaterProvider",  # noqa: F821 - see providers/__init__.py
+    contract_id: str,
+    today: date,
+    attempts_days: tuple[int, ...] = COLD_START_ATTEMPTS_DAYS,
+) -> ConsumptionBatch:
+    """Fetch history, retrying with shrinking windows on ProviderError.
+
+    Tries each window in `attempts_days` (largest first) until one
+    succeeds. Raises the LAST attempt's error if all of them fail.
+    """
+    last_error: ProviderError | None = None
+    for days_back in attempts_days:
+        try:
+            return await provider.async_get_daily_consumption(
+                contract_id, today - timedelta(days=days_back), today
+            )
+        except ProviderError as err:
+            last_error = err
+            continue
+    assert last_error is not None  # attempts_days is never empty
+    raise last_error
 
 
 @dataclass
@@ -131,7 +160,7 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
             # afterwards from the durable statistic so it is correct even
             # right after a restart, when `self._records` is empty.
             if not self._records:
-                provisional_start = today - timedelta(days=_MAX_QUERY_WINDOW_DAYS)
+                provisional_start = today - timedelta(days=COLD_START_ATTEMPTS_DAYS[0])
             else:
                 last_known = max(r.record_date for r in self._records)
                 provisional_start = last_known + timedelta(days=1)
@@ -169,9 +198,18 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
 
                 if start <= today:
                     try:
-                        batch = await provider.async_get_daily_consumption(
-                            self._contract_id, start, today
-                        )
+                        if self._last_statistic_date is None:
+                            # True cold start (no durable anchor yet): the
+                            # exact amount of history SEDIF will actually
+                            # serve for this account is unknown in advance,
+                            # so retry with shrinking windows.
+                            batch = await async_fetch_with_shrinking_window(
+                                provider, self._contract_id, today
+                            )
+                        else:
+                            batch = await provider.async_get_daily_consumption(
+                                self._contract_id, start, today
+                            )
                     except ScrapingError as err:
                         async_create_scraping_broken_issue(self.hass, self.entry.entry_id)
                         raise UpdateFailed(str(err)) from err

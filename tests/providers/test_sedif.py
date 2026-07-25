@@ -183,3 +183,21 @@ async def test_get_daily_consumption_parses_records() -> None:
         assert batch.records[1].is_estimated is True
         assert batch.price_per_m3 == pytest.approx(4.2345)
     await provider.async_close()
+
+
+async def test_ssl_context_not_built_synchronously_at_construction() -> None:
+    # Building an SSLContext does blocking file I/O (reading certifi's
+    # bundle + our intermediate cert), which must never happen directly in
+    # __init__ since that runs on HA's event loop, not in an executor.
+    provider = SedifProvider()
+    assert provider._ssl_context is None
+    await provider.async_close()
+
+
+async def test_ssl_context_built_lazily_on_first_use() -> None:
+    provider = SedifProvider()
+    with aioresponses() as m:
+        m.get(_LOGIN_URL, body=_LOGIN_HTML, status=200)
+        await provider._get_login_context()
+    assert provider._ssl_context is not None
+    await provider.async_close()

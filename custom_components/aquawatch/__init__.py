@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.config_entries import ConfigEntry
@@ -12,20 +12,13 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from . import statistics
 from .const import CONF_CONTRACT_ID, CONF_EMAIL, CONF_PASSWORD, CONF_PROVIDER, DOMAIN
-from .coordinator import AquaWatchCoordinator
+from .coordinator import AquaWatchCoordinator, async_fetch_with_shrinking_window
 from .models import ConsumptionBatch
 from .providers import get_provider_class
 from .providers.exceptions import AuthError, ProviderError
 from .services import async_setup_services
 
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
-
-# SEDIF's portal caps queryable history at ~2 years — requesting further
-# back triggers a server-side NullPointerException (confirmed empirically
-# against a real account) rather than a graceful empty/partial response.
-# Never start above that ceiling; keep smaller fallbacks in case even a
-# 2-year request has no data yet (e.g. a very recently added meter).
-_BACKFILL_ATTEMPTS_DAYS = (365 * 2, 365, 180, 90)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -90,16 +83,17 @@ async def _async_backfill_statistics(
         except AuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
 
-        for days_back in _BACKFILL_ATTEMPTS_DAYS:
-            try:
-                batch = await provider.async_get_daily_consumption(
-                    entry.data[CONF_CONTRACT_ID],
-                    today - timedelta(days=days_back),
-                    today,
-                )
-                break
-            except ProviderError:
-                continue
+        try:
+            batch = await async_fetch_with_shrinking_window(
+                provider, entry.data[CONF_CONTRACT_ID], today
+            )
+        except ProviderError:
+            # Every window failed (e.g. this account has less history than
+            # even the smallest fallback). Leave `batch` as None so setup
+            # still proceeds without a historical backfill -- the
+            # coordinator's own first refresh will surface a proper repair
+            # issue if its own (equally shrinking-window) attempt fails too.
+            pass
     finally:
         await provider.async_close()
 

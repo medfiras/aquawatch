@@ -4,8 +4,13 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from custom_components.aquawatch.coordinator import _HISTORY_WINDOW_DAYS, _percent_change
-from custom_components.aquawatch.models import ConsumptionRecord
+from custom_components.aquawatch.coordinator import (
+    _HISTORY_WINDOW_DAYS,
+    _percent_change,
+    async_fetch_with_shrinking_window,
+)
+from custom_components.aquawatch.models import ConsumptionBatch, ConsumptionRecord
+from custom_components.aquawatch.providers.exceptions import ScrapingError
 from custom_components.aquawatch.statistics import statistic_id_for_entry
 
 
@@ -384,3 +389,47 @@ async def test_seed_from_backfill_prevents_reduplicate_push_on_first_refresh(
     fake_provider.async_get_daily_consumption.assert_not_called()
     mock_push.assert_not_called()
     assert coordinator._running_sum == pytest.approx(0.22)
+
+
+async def test_fetch_with_shrinking_window_succeeds_on_later_attempt() -> None:
+    from unittest.mock import AsyncMock
+
+    today = date(2026, 7, 25)
+    fake_batch = ConsumptionBatch(
+        records=[_record(today, 100.0)], price_per_m3=4.0
+    )
+    fake_provider = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(
+        side_effect=[
+            ScrapingError("no data that far back"),
+            ScrapingError("still no data"),
+            fake_batch,
+        ]
+    )
+
+    result = await async_fetch_with_shrinking_window(
+        fake_provider, "CTR-1", today, attempts_days=(730, 365, 180)
+    )
+
+    assert result is fake_batch
+    assert fake_provider.async_get_daily_consumption.call_count == 3
+    calls = fake_provider.async_get_daily_consumption.call_args_list
+    assert calls[0].args == ("CTR-1", today - timedelta(days=730), today)
+    assert calls[1].args == ("CTR-1", today - timedelta(days=365), today)
+    assert calls[2].args == ("CTR-1", today - timedelta(days=180), today)
+
+
+async def test_fetch_with_shrinking_window_raises_last_error_if_all_fail() -> None:
+    from unittest.mock import AsyncMock
+
+    today = date(2026, 7, 25)
+    last_error = ScrapingError("even 7 days back has nothing")
+    fake_provider = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(
+        side_effect=[ScrapingError("no data"), last_error]
+    )
+
+    with pytest.raises(ScrapingError, match="even 7 days back"):
+        await async_fetch_with_shrinking_window(
+            fake_provider, "CTR-1", today, attempts_days=(730, 7)
+        )
