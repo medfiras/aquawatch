@@ -68,6 +68,9 @@ async def test_single_contract_creates_entry_directly(hass) -> None:
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_CONTRACT_ID] == "CTR-1"
     assert result["data"][CONF_EMAIL] == "user@example.com"
+    # Single contract: no opaque contract label suffix, nothing to
+    # disambiguate from.
+    assert result["title"] == "L'Eau d'Île-de-France (SEDIF)"
 
 
 async def test_multiple_contracts_prompts_contract_step(hass) -> None:
@@ -94,6 +97,8 @@ async def test_multiple_contracts_prompts_contract_step(hass) -> None:
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_CONTRACT_ID] == "CTR-2"
+    # Multiple contracts: title must disambiguate which one this entry is.
+    assert result["title"] == "L'Eau d'Île-de-France (SEDIF) — Contrat 2"
 
 
 async def test_invalid_auth_shows_error(hass) -> None:

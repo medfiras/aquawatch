@@ -137,6 +137,12 @@ class AquaWatchSensor(CoordinatorEntity[AquaWatchCoordinator], SensorEntity):
     """A single AquaWatch metric."""
 
     entity_description: AquaWatchSensorDescription
+    # Without this, HA prefixes every entity's displayed name with the full
+    # device name (the config entry title) -- with it, the device's own
+    # entity list shows just the translated entity name (e.g. "Consommation
+    # du jour"), and other views show "<device> <entity>" only once, not
+    # per-row.
+    _attr_has_entity_name = True
 
     def __init__(
         self,

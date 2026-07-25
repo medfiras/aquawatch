@@ -127,7 +127,7 @@ class SedifProvider(WaterProvider):
         await self._ensure_authenticated()
         contract_ids = await self._get_contracts()
         return [
-            ContractInfo(contract_id=cid, label=f"Contrat {cid}")
+            ContractInfo(contract_id=cid, label=f"Contrat …{cid[-8:]}")
             for cid in contract_ids
         ]
 

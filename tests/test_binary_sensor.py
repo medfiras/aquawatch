@@ -78,3 +78,8 @@ def test_all_off_by_default() -> None:
         entity.coordinator = coordinator
         entity.entity_description = description
         assert entity.is_on is False
+
+
+def test_binary_sensor_has_entity_name_so_ha_does_not_prefix_device_name_per_row() -> None:
+    entity = AquaWatchBinarySensor.__new__(AquaWatchBinarySensor)
+    assert entity.has_entity_name is True

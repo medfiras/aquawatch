@@ -105,3 +105,8 @@ def test_cout_mois_courant_and_prevision_fin_mois_cout_can_differ() -> None:
     assert cout_mois_courant.native_value == 9.0
     assert prevision_fin_mois_cout.native_value == 24.0
     assert cout_mois_courant.native_value != prevision_fin_mois_cout.native_value
+
+
+def test_sensor_has_entity_name_so_ha_does_not_prefix_device_name_per_row() -> None:
+    entity = AquaWatchSensor.__new__(AquaWatchSensor)
+    assert entity.has_entity_name is True

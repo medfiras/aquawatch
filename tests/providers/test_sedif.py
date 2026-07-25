@@ -201,3 +201,24 @@ async def test_ssl_context_built_lazily_on_first_use() -> None:
         await provider._get_login_context()
     assert provider._ssl_context is not None
     await provider.async_close()
+
+
+async def test_list_contracts_label_is_shortened_not_raw_id() -> None:
+    provider = await _authenticated_provider()
+    long_id = "GlFgcMCyMGXyUMkDOlvW7bFbuwDmEX8u0HOqKAX55126QRP4vVNhL+uknrF7USN3"
+    payload = {
+        "actions": [
+            {
+                "state": "SUCCESS",
+                "returnValue": {"returnValue": [long_id]},
+            },
+        ],
+    }
+    with aioresponses() as m:
+        m.post(AURA_URL_RE, payload=payload, status=200)
+        contracts = await provider.async_list_contracts()
+
+    assert contracts[0].contract_id == long_id
+    assert contracts[0].label == f"Contrat …{long_id[-8:]}"
+    assert len(contracts[0].label) < 20
+    await provider.async_close()

@@ -73,6 +73,7 @@ class AquaWatchBinarySensor(
     """A single AquaWatch alert condition."""
 
     entity_description: AquaWatchBinarySensorDescription
+    _attr_has_entity_name = True
 
     def __init__(
         self,
