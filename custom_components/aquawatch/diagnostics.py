@@ -8,32 +8,9 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_CONTRACT_ID, CONF_EMAIL, CONF_PASSWORD, CONF_PROVIDER, DOMAIN
-from .providers import get_provider_class
+from .const import CONF_EMAIL, CONF_PASSWORD, DOMAIN
 
 TO_REDACT = {CONF_EMAIL, CONF_PASSWORD}
-
-
-async def _async_fetch_raw_contract_details(entry: ConfigEntry) -> dict[str, Any] | str:
-    """Best-effort fetch of the provider's raw contract-details response.
-
-    Temporary debugging aid to identify which field holds the human-readable
-    contract number (SEDIF's listCurrentUserActiveContrats only returns an
-    opaque internal identifier, not the number shown on the actual portal).
-    Returns a short error string instead of raising if anything goes wrong,
-    since diagnostics must not fail just because this best-effort call did.
-    """
-    provider_cls = get_provider_class(entry.data[CONF_PROVIDER])
-    provider = provider_cls()
-    try:
-        if not hasattr(provider, "async_get_raw_contract_details"):
-            return "not supported by this provider"
-        await provider.async_authenticate(entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
-        return await provider.async_get_raw_contract_details(entry.data[CONF_CONTRACT_ID])
-    except Exception as err:  # noqa: BLE001 - best-effort debug aid, must not break diagnostics
-        return f"error fetching raw contract details: {err}"
-    finally:
-        await provider.async_close()
 
 
 async def async_get_config_entry_diagnostics(
@@ -44,7 +21,6 @@ async def async_get_config_entry_diagnostics(
     data = coordinator.data
 
     return {
-        "debug_raw_contract_details": await _async_fetch_raw_contract_details(entry),
         "entry_data": async_redact_data(dict(entry.data), TO_REDACT),
         "entry_options": dict(entry.options),
         "record_count": len(data.records) if data else 0,

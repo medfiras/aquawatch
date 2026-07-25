@@ -12,6 +12,7 @@ from .const import (
     BUDGET_UNIT_EUR,
     BUDGET_UNIT_M3,
     CONF_CONTRACT_ID,
+    CONF_CONTRACT_NUMBER,
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_PROVIDER,
@@ -146,6 +147,7 @@ class AquaWatchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_EMAIL: self._email,
                 CONF_PASSWORD: self._password,
                 CONF_CONTRACT_ID: contract.contract_id,
+                CONF_CONTRACT_NUMBER: contract.label,
             },
         )
 

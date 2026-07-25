@@ -112,13 +112,41 @@ def test_sensor_has_entity_name_so_ha_does_not_prefix_device_name_per_row() -> N
     assert entity.has_entity_name is True
 
 
-def test_index_compteur_exposes_contract_id_attribute() -> None:
+def test_index_compteur_exposes_contract_number_attribute() -> None:
     coordinator = _fake_coordinator(_sample_data())
     description = _find_description("index_compteur")
     entity = AquaWatchSensor.__new__(AquaWatchSensor)
     entity.coordinator = coordinator
     entity.entity_description = description
-    entity._contract_id = "GlFgcMCyMGXyUMkDOlvW7bFbuwDmEX8u0HOqKAX55126QRP4vVNhL+uknrF7USN3"
-    assert entity.extra_state_attributes == {
-        "numero_contrat": "GlFgcMCyMGXyUMkDOlvW7bFbuwDmEX8u0HOqKAX55126QRP4vVNhL+uknrF7USN3"
-    }
+    entity._contract_number = "Contrat 9257681"
+    assert entity.extra_state_attributes == {"numero_contrat": "Contrat 9257681"}
+
+
+def test_init_uses_contract_number_when_present() -> None:
+    from types import SimpleNamespace
+
+    from custom_components.aquawatch.const import CONF_CONTRACT_ID, CONF_CONTRACT_NUMBER
+
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        title="L'Eau d'Île-de-France (SEDIF) — Contrat 9257681",
+        data={CONF_CONTRACT_ID: "opaque-id", CONF_CONTRACT_NUMBER: "Contrat 9257681"},
+    )
+    description = _find_description("index_compteur")
+    entity = AquaWatchSensor(_fake_coordinator(_sample_data()), entry, description)
+    assert entity._contract_number == "Contrat 9257681"
+
+
+def test_init_falls_back_to_contract_id_without_contract_number() -> None:
+    from types import SimpleNamespace
+
+    from custom_components.aquawatch.const import CONF_CONTRACT_ID
+
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        title="L'Eau d'Île-de-France (SEDIF)",
+        data={CONF_CONTRACT_ID: "opaque-id"},
+    )
+    description = _find_description("index_compteur")
+    entity = AquaWatchSensor(_fake_coordinator(_sample_data()), entry, description)
+    assert entity._contract_number == "opaque-id"

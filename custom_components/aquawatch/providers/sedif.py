@@ -125,10 +125,24 @@ class SedifProvider(WaterProvider):
     async def async_list_contracts(self) -> list[ContractInfo]:
         await self._ensure_authenticated()
         contract_ids = await self._get_contracts()
-        return [
-            ContractInfo(contract_id=cid, label=f"Contrat …{cid[-8:]}")
-            for cid in contract_ids
-        ]
+        contracts = []
+        for cid in contract_ids:
+            # `cid` itself (from listCurrentUserActiveContrats) is an opaque
+            # Salesforce record ID, not the number shown on the actual SEDIF
+            # portal -- that human-readable number lives at
+            # getContratDetails()'s response under contrat.Name (confirmed
+            # against a real account; contrat.Id there is the same kind of
+            # opaque identifier as `cid`). Falls back to a shortened `cid`
+            # if that field is ever missing, rather than failing outright.
+            details = await self._get_contract_details(cid)
+            contract_number = details.get("contrat", {}).get("Name")
+            label = (
+                f"Contrat {contract_number}"
+                if contract_number
+                else f"Contrat …{cid[-8:]}"
+            )
+            contracts.append(ContractInfo(contract_id=cid, label=label))
+        return contracts
 
     async def async_get_raw_contract_details(self, contract_id: str) -> dict[str, Any]:
         """Return the unprocessed getContratDetails response (for debugging).

@@ -159,11 +159,39 @@ async def test_authenticate_raises_on_failure() -> None:
 
 async def test_list_contracts_returns_contract_info() -> None:
     provider = await _authenticated_provider()
+    details_with_name = {
+        "actions": [
+            {
+                "state": "SUCCESS",
+                "returnValue": {
+                    "returnValue": {
+                        "contrat": {"Id": "opaque-sf-id", "Name": "9257681"},
+                        "compteInfo": [{"ELEMB": "CTR-001", "ELEMA": "PDS-001"}],
+                    },
+                },
+            },
+        ],
+    }
     with aioresponses() as m:
         m.post(AURA_URL_RE, payload=_CONTRACTS_RESPONSE, status=200)
+        m.post(AURA_URL_RE, payload=details_with_name, status=200)
         contracts = await provider.async_list_contracts()
         assert len(contracts) == 1
+        # contract_id stays the opaque identifier (still required for the
+        # other Aura calls) -- only the label uses the human-readable number.
         assert contracts[0].contract_id == "contract-1"
+        assert contracts[0].label == "Contrat 9257681"
+    await provider.async_close()
+
+
+async def test_list_contracts_falls_back_to_shortened_id_without_a_name() -> None:
+    provider = await _authenticated_provider()
+    with aioresponses() as m:
+        m.post(AURA_URL_RE, payload=_CONTRACTS_RESPONSE, status=200)
+        m.post(AURA_URL_RE, payload=_CONTRACT_DETAILS_RESPONSE, status=200)
+        contracts = await provider.async_list_contracts()
+
+    assert contracts[0].label == "Contrat …ntract-1"
     await provider.async_close()
 
 
@@ -206,7 +234,7 @@ async def test_ssl_context_built_lazily_on_first_use() -> None:
 async def test_list_contracts_label_is_shortened_not_raw_id() -> None:
     provider = await _authenticated_provider()
     long_id = "GlFgcMCyMGXyUMkDOlvW7bFbuwDmEX8u0HOqKAX55126QRP4vVNhL+uknrF7USN3"
-    payload = {
+    contracts_payload = {
         "actions": [
             {
                 "state": "SUCCESS",
@@ -215,7 +243,10 @@ async def test_list_contracts_label_is_shortened_not_raw_id() -> None:
         ],
     }
     with aioresponses() as m:
-        m.post(AURA_URL_RE, payload=payload, status=200)
+        m.post(AURA_URL_RE, payload=contracts_payload, status=200)
+        # No "contrat.Name" in this response -- falls back to the
+        # shortened opaque id.
+        m.post(AURA_URL_RE, payload=_CONTRACT_DETAILS_RESPONSE, status=200)
         contracts = await provider.async_list_contracts()
 
     assert contracts[0].contract_id == long_id
@@ -232,7 +263,7 @@ async def test_async_get_raw_contract_details_returns_unprocessed_response() -> 
                 "state": "SUCCESS",
                 "returnValue": {
                     "returnValue": {
-                        "numeroContrat": "9257681",
+                        "contrat": {"Id": "opaque-sf-id", "Name": "9257681"},
                         "compteInfo": [{"ELEMB": "CTR-001", "ELEMA": "PDS-001"}],
                     },
                 },
@@ -244,7 +275,7 @@ async def test_async_get_raw_contract_details_returns_unprocessed_response() -> 
         result = await provider.async_get_raw_contract_details("contract-1")
 
     assert result == {
-        "numeroContrat": "9257681",
+        "contrat": {"Id": "opaque-sf-id", "Name": "9257681"},
         "compteInfo": [{"ELEMB": "CTR-001", "ELEMA": "PDS-001"}],
     }
     await provider.async_close()

@@ -4,6 +4,7 @@ DOMAIN = "aquawatch"
 
 CONF_PROVIDER = "provider"
 CONF_CONTRACT_ID = "contract_id"
+CONF_CONTRACT_NUMBER = "contract_number"
 CONF_EMAIL = "email"
 CONF_PASSWORD = "password"
 
