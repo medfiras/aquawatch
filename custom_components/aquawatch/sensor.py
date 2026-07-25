@@ -34,7 +34,7 @@ SENSOR_DESCRIPTIONS: tuple[AquaWatchSensorDescription, ...] = (
         translation_key="consommation_jour",
         native_unit_of_measurement="L",
         device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.records[-1].liters if d.records else None,
     ),
     AquaWatchSensorDescription(
