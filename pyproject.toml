@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aquawatch"
-version = "0.1.1"
+version = "0.1.2"
 description = "Home Assistant integration for French water utilities"
 requires-python = ">=3.12"
 dependencies = [

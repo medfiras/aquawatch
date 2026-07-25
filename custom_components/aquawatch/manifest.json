@@ -1,7 +1,7 @@
 {
   "domain": "aquawatch",
   "name": "AquaWatch",
-  "codeowners": ["@fhajjej"],
+  "codeowners": ["@medfiras"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/medfiras/aquawatch",
@@ -9,5 +9,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/medfiras/aquawatch/issues",
   "requirements": ["aiohttp>=3.9", "certifi"],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }
