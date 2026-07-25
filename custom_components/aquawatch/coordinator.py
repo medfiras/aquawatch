@@ -50,6 +50,13 @@ from .statistics import statistic_id_for_entry
 _LOGGER = logging.getLogger(__name__)
 
 _HISTORY_WINDOW_DAYS = 740
+# SEDIF's portal caps queryable history at ~2 years (confirmed empirically:
+# requesting further back than this triggers a server-side
+# System.NullPointerException in their own Apex wrapper conversion code,
+# rather than an empty/graceful response). Keep the cold-start query window
+# under that ceiling, distinct from _HISTORY_WINDOW_DAYS (which governs how
+# much history we RETAIN in memory once we have it, for vs_last_year_pct).
+_MAX_QUERY_WINDOW_DAYS = 730
 _BASELINE_DAYS = 14
 _STALE_AFTER_DAYS = 3
 
@@ -124,7 +131,7 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
             # afterwards from the durable statistic so it is correct even
             # right after a restart, when `self._records` is empty.
             if not self._records:
-                provisional_start = today - timedelta(days=_HISTORY_WINDOW_DAYS)
+                provisional_start = today - timedelta(days=_MAX_QUERY_WINDOW_DAYS)
             else:
                 last_known = max(r.record_date for r in self._records)
                 provisional_start = last_known + timedelta(days=1)

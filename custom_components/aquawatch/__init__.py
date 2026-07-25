@@ -20,7 +20,12 @@ from .services import async_setup_services
 
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
-_BACKFILL_ATTEMPTS_DAYS = (365 * 3, 365 * 2, 365, 180)
+# SEDIF's portal caps queryable history at ~2 years — requesting further
+# back triggers a server-side NullPointerException (confirmed empirically
+# against a real account) rather than a graceful empty/partial response.
+# Never start above that ceiling; keep smaller fallbacks in case even a
+# 2-year request has no data yet (e.g. a very recently added meter).
+_BACKFILL_ATTEMPTS_DAYS = (365 * 2, 365, 180, 90)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
