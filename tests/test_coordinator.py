@@ -255,6 +255,10 @@ async def test_restart_resumes_from_last_statistic_date_not_full_history_window(
             },
         ),
         patch(
+            "custom_components.aquawatch.coordinator.statistics_during_period",
+            return_value={},
+        ),
+        patch(
             "custom_components.aquawatch.coordinator.statistics.async_push_records",
             return_value=500.12,
         ),
@@ -276,6 +280,108 @@ async def test_restart_resumes_from_last_statistic_date_not_full_history_window(
     assert call_args[1] != today - timedelta(days=_HISTORY_WINDOW_DAYS)
 
     assert coordinator._last_statistic_date == today
+
+
+async def test_restart_reconstructs_records_from_long_term_statistics(
+    hass,
+) -> None:
+    """After a restart, `_records` starts empty even though the full history
+    is durably available in long-term statistics (pushed by
+    `statistics.async_push_records`, which survive restarts unlike
+    `_records`). Sensors needing more than the latest day (yesterday's
+    consumption, weekly/monthly/yearly comparisons) would otherwise stay
+    Unknown after every restart until enough new days re-accumulated. The
+    coordinator must rebuild `_records` from `statistics_during_period`
+    instead of leaving it empty.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.models import ConsumptionBatch
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    today = date.today()
+    last_statistic_date = today - timedelta(days=1)
+    last_statistic_start_ts = datetime.combine(
+        last_statistic_date, datetime.min.time(), tzinfo=timezone.utc
+    ).timestamp()
+
+    def _ts(day: date) -> float:
+        return datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc).timestamp()
+
+    statistic_id = statistic_id_for_entry(entry.entry_id)
+    historical_rows = {
+        statistic_id: [
+            {"start": _ts(today - timedelta(days=3)), "state": 0.1, "sum": 5.0},
+            {"start": _ts(today - timedelta(days=2)), "state": 0.2, "sum": 5.2},
+            {"start": _ts(last_statistic_date), "state": 0.15, "sum": 5.35},
+        ]
+    }
+
+    fake_batch = ConsumptionBatch(records=[_record(today, 120.0)], price_per_m3=4.0)
+
+    fake_provider = AsyncMock()
+    del fake_provider.async_get_raw_contract_details
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(return_value=fake_batch)
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={
+                statistic_id: [{"sum": 5.35, "start": last_statistic_start_ts}]
+            },
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics_during_period",
+            return_value=historical_rows,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_records",
+            return_value=5.47,
+        ),
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        assert coordinator._records == []
+
+        await coordinator._async_update_data()
+
+    reconstructed_dates = [r.record_date for r in coordinator._records]
+    assert reconstructed_dates == [
+        today - timedelta(days=3),
+        today - timedelta(days=2),
+        last_statistic_date,
+        today,
+    ]
+
+    reconstructed = coordinator._records[0]
+    assert reconstructed.liters == pytest.approx(100.0)
+    assert reconstructed.cumulative_index_m3 == pytest.approx(5.0)
+    assert reconstructed.is_estimated is False
 
 
 def _build_coordinator(hass) -> "AquaWatchCoordinator":  # noqa: F821
@@ -550,6 +656,10 @@ async def test_incremental_scraping_error_does_not_raise_or_create_repair_issue(
                     {"sum": 5.0, "start": last_statistic_start_ts}
                 ]
             },
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics_during_period",
+            return_value={},
         ),
         patch(
             "custom_components.aquawatch.coordinator.async_create_scraping_broken_issue"

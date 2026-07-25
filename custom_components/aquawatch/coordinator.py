@@ -6,7 +6,10 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
-from homeassistant.components.recorder.statistics import get_last_statistics
+from homeassistant.components.recorder.statistics import (
+    get_last_statistics,
+    statistics_during_period,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -241,6 +244,22 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                             self._last_statistic_date = datetime.fromtimestamp(
                                 last_start, tz=timezone.utc
                             ).date()
+                        if not self._records:
+                            # `self._records` only lives in memory and is
+                            # wiped on every HA restart, unlike the
+                            # long-term statistics pushed by
+                            # `statistics.async_push_records` (which
+                            # survive). Without this, every restart would
+                            # blank out every sensor that needs more than
+                            # the latest day (yesterday's consumption,
+                            # weekly/monthly/yearly comparisons, eco-score,
+                            # leak/anomaly baselines) until enough new days
+                            # accumulated again.
+                            self._records = (
+                                await self._async_reconstruct_records_from_statistics(
+                                    today
+                                )
+                            )
                     else:
                         self._running_sum = 0.0
 
@@ -339,6 +358,52 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
             site_address,
             meter_serial_number,
         )
+
+    async def _async_reconstruct_records_from_statistics(
+        self, today: date
+    ) -> list[ConsumptionRecord]:
+        """Rebuild the in-memory record window from durable long-term statistics.
+
+        Each daily push (see `statistics.async_push_records`) stores both
+        `state` (that day's liters, in m3) and `sum` (the running cumulative
+        index, in m3) at midnight UTC, so a "day"-period query reconstructs
+        exact `ConsumptionRecord`s. The `is_estimated` flag isn't stored in
+        long-term statistics; it only affects a display attribute, not any
+        detection/forecast calculation, so it defaults to `False` here.
+        """
+        start_time = datetime.combine(
+            today - timedelta(days=_HISTORY_WINDOW_DAYS),
+            datetime.min.time(),
+            tzinfo=timezone.utc,
+        )
+        stats = await self.hass.async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            start_time,
+            None,
+            {self._statistic_id},
+            "day",
+            None,
+            {"state", "sum"},
+        )
+        records = []
+        for row in stats.get(self._statistic_id, []):
+            row_start = row.get("start")
+            state = row.get("state")
+            row_sum = row.get("sum")
+            if row_start is None or state is None or row_sum is None:
+                continue
+            records.append(
+                ConsumptionRecord(
+                    record_date=datetime.fromtimestamp(
+                        row_start, tz=timezone.utc
+                    ).date(),
+                    liters=state * 1000,
+                    cumulative_index_m3=row_sum,
+                    is_estimated=False,
+                )
+            )
+        return sorted(records, key=lambda r: r.record_date)
 
     def _build_data(
         self,
