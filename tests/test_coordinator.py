@@ -433,3 +433,81 @@ async def test_fetch_with_shrinking_window_raises_last_error_if_all_fail() -> No
         await async_fetch_with_shrinking_window(
             fake_provider, "CTR-1", today, attempts_days=(730, 7)
         )
+
+
+async def test_incremental_scraping_error_does_not_raise_or_create_repair_issue(
+    hass,
+) -> None:
+    """A ScrapingError on the steady-state incremental fetch (SEDIF hasn't
+    published today's reading yet) must be treated as "nothing new this
+    cycle", not as a portal-structure-broken repair issue -- unlike the
+    same error during the cold-start fetch, which does create one (see
+    test_scraping_error_creates_repair_issue).
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    today = date.today()
+    last_statistic_date = today - timedelta(days=1)
+    last_statistic_start_ts = datetime.combine(
+        last_statistic_date, datetime.min.time(), tzinfo=timezone.utc
+    ).timestamp()
+
+    fake_provider = AsyncMock()
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(
+        side_effect=ScrapingError("no reading published for this date yet")
+    )
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={
+                "aquawatch:" + entry.entry_id.lower() + "_consumption": [
+                    {"sum": 5.0, "start": last_statistic_start_ts}
+                ]
+            },
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.async_create_scraping_broken_issue"
+        ) as mock_issue,
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_records"
+        ) as mock_push,
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        # Must not raise UpdateFailed.
+        data = await coordinator._async_update_data()
+
+    fake_provider.async_get_daily_consumption.assert_called_once_with(
+        "CTR-1", last_statistic_date + timedelta(days=1), today
+    )
+    mock_issue.assert_not_called()
+    mock_push.assert_not_called()
+    assert data is not None

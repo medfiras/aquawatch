@@ -197,39 +197,69 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                     start = max(candidates) + timedelta(days=1)
 
                 if start <= today:
-                    try:
-                        if self._last_statistic_date is None:
-                            # True cold start (no durable anchor yet): the
-                            # exact amount of history SEDIF will actually
-                            # serve for this account is unknown in advance,
-                            # so retry with shrinking windows.
+                    batch = None
+                    if self._last_statistic_date is None:
+                        # True cold start (no durable anchor yet): the
+                        # exact amount of history SEDIF will actually
+                        # serve for this account is unknown in advance,
+                        # so retry with shrinking windows. A ScrapingError
+                        # surviving every attempt here is a genuine signal
+                        # something is wrong (portal broken, or an account
+                        # with no data at all), so it still creates the
+                        # repair issue.
+                        try:
                             batch = await async_fetch_with_shrinking_window(
                                 provider, self._contract_id, today
                             )
-                        else:
+                        except ScrapingError as err:
+                            async_create_scraping_broken_issue(
+                                self.hass, self.entry.entry_id
+                            )
+                            raise UpdateFailed(str(err)) from err
+                        except ProviderError as err:
+                            raise UpdateFailed(str(err)) from err
+                    else:
+                        # Steady-state incremental fetch (usually just
+                        # "yesterday+1 .. today", i.e. today's reading).
+                        # SEDIF's backend has been observed to raise the
+                        # same NullPointerException here when it simply
+                        # hasn't published a reading for the requested day
+                        # yet (a normal, recurring reporting lag), not a
+                        # structural break -- so this one case is treated
+                        # as "nothing new yet" rather than a repair-worthy
+                        # failure. If the portal is genuinely broken, the
+                        # existing "donnees_perimees" staleness check will
+                        # flag it once this persists for several days, and
+                        # any non-Scraping ProviderError still surfaces.
+                        try:
                             batch = await provider.async_get_daily_consumption(
                                 self._contract_id, start, today
                             )
-                    except ScrapingError as err:
-                        async_create_scraping_broken_issue(self.hass, self.entry.entry_id)
-                        raise UpdateFailed(str(err)) from err
-                    except ProviderError as err:
-                        raise UpdateFailed(str(err)) from err
+                        except ScrapingError:
+                            _LOGGER.debug(
+                                "Incremental fetch for %s..%s returned no data "
+                                "(likely not yet published); will retry next cycle",
+                                start,
+                                today,
+                            )
+                        except ProviderError as err:
+                            raise UpdateFailed(str(err)) from err
 
-                    self._records.extend(batch.records)
-                    price_per_m3 = batch.price_per_m3
+                    if batch is not None:
+                        self._records.extend(batch.records)
+                        price_per_m3 = batch.price_per_m3
 
-                    self._running_sum = statistics.async_push_records(
-                        self.hass,
-                        self._statistic_id,
-                        self.entry.title,
-                        batch.records,
-                        self._running_sum,
-                    )
-                    if batch.records:
-                        self._last_statistic_date = max(
-                            r.record_date for r in batch.records
+                        self._running_sum = statistics.async_push_records(
+                            self.hass,
+                            self._statistic_id,
+                            self.entry.title,
+                            batch.records,
+                            self._running_sum,
                         )
+                        if batch.records:
+                            self._last_statistic_date = max(
+                                r.record_date for r in batch.records
+                            )
         finally:
             await provider.async_close()
 
