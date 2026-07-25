@@ -212,7 +212,7 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                         exc_info=True,
                     )
 
-            today = datetime.now().date()
+            today = datetime.now(timezone.utc).date()
 
             # Provisional check for whether there is anything left to fetch,
             # based only on in-memory records (which do NOT survive a
