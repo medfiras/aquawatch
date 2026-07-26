@@ -158,6 +158,29 @@ class SedifProvider(WaterProvider):
     async def async_get_daily_consumption(
         self, contract_id: str, start: date, end: date
     ) -> ConsumptionBatch:
+        result = await self._get_consumption_raw(contract_id, start, end)
+        data = result.get("data", {})
+        records = [_parse_record(raw) for raw in data.get("CONSOMMATION", [])]
+        return ConsumptionBatch(
+            records=records,
+            price_per_m3=float(result.get("prixMoyenEau", 0)),
+        )
+
+    async def async_get_raw_daily_consumption(
+        self, contract_id: str, start: date, end: date
+    ) -> dict[str, Any]:
+        """Return the unprocessed getData response (for debugging).
+
+        Not part of the WaterProvider interface -- SEDIF-specific, used by
+        diagnostics.py to check whether the portal exposes a more detailed
+        tariff breakdown than the single blended `prixMoyenEau` figure.
+        """
+        await self._ensure_authenticated()
+        return await self._get_consumption_raw(contract_id, start, end)
+
+    async def _get_consumption_raw(
+        self, contract_id: str, start: date, end: date
+    ) -> dict[str, Any]:
         await self._ensure_authenticated()
         details = await self._get_contract_details(contract_id)
         compte_info = details.get("compteInfo", [])
@@ -168,7 +191,7 @@ class SedifProvider(WaterProvider):
         numero_compteur = meter["ELEMB"]
         id_pds = meter["ELEMA"]
 
-        result = await self._apex_action(
+        return await self._apex_action(
             "LTN015_ICL_ContratConsoHisto",
             "getData",
             params={
@@ -180,13 +203,6 @@ class SedifProvider(WaterProvider):
                 "ID_PDS": id_pds,
             },
             page_uri="/espace-particuliers/s/historique",
-        )
-
-        data = result.get("data", {})
-        records = [_parse_record(raw) for raw in data.get("CONSOMMATION", [])]
-        return ConsumptionBatch(
-            records=records,
-            price_per_m3=float(result.get("prixMoyenEau", 0)),
         )
 
     async def async_close(self) -> None:

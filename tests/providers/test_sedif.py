@@ -213,6 +213,20 @@ async def test_get_daily_consumption_parses_records() -> None:
     await provider.async_close()
 
 
+async def test_async_get_raw_daily_consumption_returns_unprocessed_response() -> None:
+    provider = await _authenticated_provider()
+    with aioresponses() as m:
+        m.post(AURA_URL_RE, payload=_CONTRACT_DETAILS_RESPONSE, status=200)
+        m.post(AURA_URL_RE, payload=_GET_DATA_RESPONSE, status=200)
+
+        result = await provider.async_get_raw_daily_consumption(
+            "contract-1", date(2024, 3, 15), date(2024, 3, 17)
+        )
+
+    assert result == _GET_DATA_RESPONSE["actions"][0]["returnValue"]["returnValue"]
+    await provider.async_close()
+
+
 async def test_ssl_context_not_built_synchronously_at_construction() -> None:
     # Building an SSLContext does blocking file I/O (reading certifi's
     # bundle + our intermediate cert), which must never happen directly in
