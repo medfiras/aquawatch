@@ -129,3 +129,25 @@ async def test_unload_entry_removes_coordinator(hass) -> None:
         await hass.async_block_till_done()
 
     assert entry.entry_id not in hass.data.get(DOMAIN, {})
+
+
+async def test_remove_entry_clears_its_external_statistic(hass) -> None:
+    from unittest.mock import MagicMock
+
+    from custom_components.aquawatch import async_remove_entry
+    from custom_components.aquawatch.statistics import statistic_id_for_entry
+
+    entry = _entry()
+    entry.add_to_hass(hass)
+
+    # async_clear_statistics is a @callback (synchronous, fire-and-forget),
+    # not a coroutine -- a plain MagicMock mirrors that, an AsyncMock would not.
+    mock_instance = MagicMock()
+    with patch(
+        "custom_components.aquawatch.get_instance", return_value=mock_instance
+    ):
+        await async_remove_entry(hass, entry)
+
+    mock_instance.async_clear_statistics.assert_called_once_with(
+        [statistic_id_for_entry(entry.entry_id)]
+    )

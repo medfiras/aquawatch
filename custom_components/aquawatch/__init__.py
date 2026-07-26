@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -60,6 +61,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not hass.data[DOMAIN]:
             async_unload_services(hass)
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Delete the durable external statistic when the entry is fully removed.
+
+    Without this, the statistic pushed by `statistics.async_push_records`
+    stays in the recorder forever under its own entry_id-derived
+    statistic_id, forever showing up as a same-named duplicate ("AquaWatch
+    <title>") in the Energy dashboard's source picker every time the
+    integration is removed and re-added.
+    """
+    statistic_id = statistics.statistic_id_for_entry(entry.entry_id)
+    get_instance(hass).async_clear_statistics([statistic_id])
 
 
 async def _async_backfill_statistics(
