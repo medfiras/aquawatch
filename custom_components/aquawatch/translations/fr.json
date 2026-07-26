@@ -66,6 +66,9 @@
       "anomalie_detectee": { "name": "Anomalie détectée" },
       "budget_depasse": { "name": "Budget dépassé" },
       "donnees_perimees": { "name": "Données périmées" }
+    },
+    "button": {
+      "force_refresh": { "name": "Forcer le rafraîchissement" }
     }
   },
   "services": {

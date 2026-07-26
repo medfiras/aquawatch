@@ -66,6 +66,9 @@
       "anomalie_detectee": { "name": "Anomaly detected" },
       "budget_depasse": { "name": "Budget exceeded" },
       "donnees_perimees": { "name": "Data stale" }
+    },
+    "button": {
+      "force_refresh": { "name": "Force refresh" }
     }
   },
   "services": {

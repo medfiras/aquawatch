@@ -18,7 +18,7 @@ from .providers import get_provider_class
 from .providers.exceptions import AuthError, ProviderError
 from .services import async_setup_services, async_unload_services
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

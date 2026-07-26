@@ -69,6 +69,12 @@ Le capteur **Index du compteur** porte aussi des attributs supplémentaires :
 | Budget dépassé | La projection de fin de mois dépasse le budget configuré (€ ou m³) |
 | Données périmées | Aucun nouveau relevé reçu depuis plusieurs jours *(diagnostic)* |
 
+### Bouton
+
+| Entité | Description |
+|---|---|
+| Forcer le rafraîchissement | Déclenche immédiatement une nouvelle récupération des données, sans attendre le prochain cycle |
+
 ## Origine des données
 
 ### Directement depuis l'API du fournisseur
