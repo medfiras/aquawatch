@@ -100,6 +100,84 @@ async def test_setup_entry_backfills_statistics_and_creates_coordinator(hass) ->
     )
 
 
+async def test_cost_backfilled_retroactively_when_volume_exists_but_cost_does_not(
+    hass,
+) -> None:
+    """Reproduces the upgrade bug: an install that predates cost tracking
+    already has volume history, so the (volume-gated) backfill is skipped
+    entirely -- which used to also skip the cost statistic's backfill,
+    leaving every day before the upgrade at 0 in the Energy dashboard.
+    """
+    from custom_components.aquawatch.statistics import (
+        cost_statistic_id_for_entry,
+        statistic_id_for_entry,
+    )
+
+    entry = _entry()
+    entry.add_to_hass(hass)
+
+    statistic_id = statistic_id_for_entry(entry.entry_id)
+    cost_statistic_id = cost_statistic_id_for_entry(entry.entry_id)
+
+    def _fake_get_last_statistics(hass_arg, number, stat_id, convert, types):
+        if stat_id == statistic_id:
+            return {statistic_id: [{"sum": 5.0, "start": 1000.0}]}
+        return {}
+
+    historical_rows = {
+        statistic_id: [{"start": 1700000000.0, "state": 0.2}],
+    }
+
+    fake_provider = AsyncMock()
+    del fake_provider.async_get_raw_contract_details
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(return_value=_fake_batch())
+    fake_provider.async_close = AsyncMock()
+    fake_provider_cls = lambda: fake_provider
+
+    with (
+        patch(
+            "custom_components.aquawatch.get_provider_class",
+            return_value=fake_provider_cls,
+        ),
+        patch(
+            "custom_components.aquawatch.get_last_statistics",
+            side_effect=_fake_get_last_statistics,
+        ),
+        patch(
+            "custom_components.aquawatch.statistics_during_period",
+            return_value=historical_rows,
+        ),
+        patch(
+            "custom_components.aquawatch.statistics.async_add_external_statistics"
+        ) as mock_add_stats,
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=fake_provider_cls,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={},
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state.value == "loaded"
+    # The retroactive cost backfill (for the pre-upgrade history) must have
+    # pushed first, before the coordinator's own first refresh pushes
+    # today's day. The volume-gated backfill itself was skipped, since
+    # volume history already existed.
+    first_call_metadata, first_call_statistics = (
+        mock_add_stats.call_args_list[0].args[1],
+        mock_add_stats.call_args_list[0].args[2],
+    )
+    assert first_call_metadata["statistic_id"] == cost_statistic_id
+    assert len(first_call_statistics) == 1
+    # 0.2 m3 * 4.0 EUR/m3 (the fake provider's price_per_m3)
+    assert first_call_statistics[0]["sum"] == pytest.approx(0.8)
+
+
 async def test_unload_entry_removes_coordinator(hass) -> None:
     entry = _entry()
     entry.add_to_hass(hass)

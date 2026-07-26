@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.statistics import get_last_statistics
+from homeassistant.components.recorder.statistics import (
+    get_last_statistics,
+    statistics_during_period,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -13,8 +16,12 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from . import statistics
 from .const import CONF_CONTRACT_ID, CONF_EMAIL, CONF_PASSWORD, CONF_PROVIDER, DOMAIN
-from .coordinator import AquaWatchCoordinator, async_fetch_with_shrinking_window
-from .models import ConsumptionBatch
+from .coordinator import (
+    _HISTORY_WINDOW_DAYS,
+    AquaWatchCoordinator,
+    async_fetch_with_shrinking_window,
+)
+from .models import ConsumptionBatch, ConsumptionRecord
 from .providers import get_provider_class
 from .providers.exceptions import AuthError, ProviderError
 from .services import async_setup_services, async_unload_services
@@ -36,6 +43,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         backfill_batch = await _async_backfill_statistics(
             hass, entry, statistic_id, cost_statistic_id
         )
+    else:
+        # Volume history already exists (e.g. upgrading an install that
+        # predates cost tracking), but the cost statistic itself may never
+        # have been backfilled -- _async_backfill_statistics above is the
+        # only place that pushes it, and it's skipped whenever volume
+        # already has data. Without this, cost would only start
+        # accumulating from whatever day the coordinator's own update cycle
+        # first ran after the upgrade, leaving every earlier day at 0 in
+        # the Energy dashboard.
+        last_cost_stats = await hass.async_add_executor_job(
+            get_last_statistics, hass, 1, cost_statistic_id, True, {"sum"}
+        )
+        if not last_cost_stats:
+            await _async_backfill_cost_from_existing_volume(
+                hass, entry, statistic_id, cost_statistic_id
+            )
 
     coordinator = AquaWatchCoordinator(hass, entry)
     if backfill_batch and backfill_batch.records:
@@ -138,3 +161,82 @@ async def _async_backfill_statistics(
         running_sum_start=0.0,
     )
     return batch
+
+
+async def _async_backfill_cost_from_existing_volume(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    statistic_id: str,
+    cost_statistic_id: str,
+) -> None:
+    """Retroactively backfill the cost statistic from the volume statistic's
+    own history.
+
+    Handles upgrading an existing installation to a version with cost
+    tracking: the volume statistic may already hold years of daily history,
+    but the cost statistic has never been pushed (see the caller). The
+    exact historical price isn't retained anywhere, so every past day is
+    costed at today's rate -- the same blended-price simplification already
+    used everywhere else in this integration.
+
+    Best-effort: any failure here must not block setup, since the volume
+    statistic and the coordinator's own ongoing cost tracking are unaffected
+    either way.
+    """
+    provider_cls = get_provider_class(entry.data[CONF_PROVIDER])
+    provider = provider_cls()
+    today = date.today()
+    price_per_m3 = None
+    try:
+        try:
+            await provider.async_authenticate(
+                entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD]
+            )
+        except AuthError:
+            return
+        try:
+            recent_batch = await provider.async_get_daily_consumption(
+                entry.data[CONF_CONTRACT_ID], today - timedelta(days=1), today
+            )
+            price_per_m3 = recent_batch.price_per_m3
+        except ProviderError:
+            return
+    finally:
+        await provider.async_close()
+
+    if not price_per_m3:
+        return
+
+    start_time = datetime.combine(
+        today - timedelta(days=_HISTORY_WINDOW_DAYS),
+        datetime.min.time(),
+        tzinfo=timezone.utc,
+    )
+    volume_rows = await hass.async_add_executor_job(
+        statistics_during_period,
+        hass,
+        start_time,
+        None,
+        {statistic_id},
+        "day",
+        None,
+        {"state"},
+    )
+    records = []
+    for row in volume_rows.get(statistic_id, []):
+        row_start = row.get("start")
+        state = row.get("state")
+        if row_start is None or state is None:
+            continue
+        records.append(
+            ConsumptionRecord(
+                record_date=datetime.fromtimestamp(row_start, tz=timezone.utc).date(),
+                liters=state * 1000,
+                cumulative_index_m3=0.0,
+                is_estimated=True,
+            )
+        )
+
+    statistics.async_push_cost_records(
+        hass, cost_statistic_id, entry.title, records, price_per_m3, running_sum_start=0.0
+    )
