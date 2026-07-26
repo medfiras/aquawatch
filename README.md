@@ -46,6 +46,7 @@ d'eau français.
 | Index du compteur | Valeur cumulée affichée par le compteur | m³ |
 | Coût du jour | Coût du dernier relevé (litres × prix au m³) | € |
 | Coût du mois en cours | Coût cumulé depuis le 1er du mois en cours | € |
+| Coût total | Coût cumulé depuis le début du suivi par AquaWatch (utilisable comme "entité de suivi des coûts totaux" pour cette source d'eau dans le tableau de bord Énergie) | € |
 | Prix au m³ | Prix au m³ actuellement appliqué par le fournisseur | €/m³ |
 | Prévision volume fin de mois | Projection du volume total en fin de mois, basée sur la consommation actuelle | m³ |
 | Prévision coût fin de mois | Projection du coût total en fin de mois | € |
@@ -100,7 +101,7 @@ dérivées de l'historique des relevés déjà récupérés :
 
 | Capteur | Méthode de calcul |
 |---|---|
-| Coût du jour / du mois en cours | `litres ÷ 1000 × prix au m³` |
+| Coût du jour / du mois en cours / total | `litres ÷ 1000 × prix au m³` (le coût total est cumulé jour après jour, au prix en vigueur à chaque relevé, jamais recalculé rétroactivement) |
 | Prévision volume/coût fin de mois | Moyenne pondérée 60 % (moyenne du mois en cours) / 40 % (moyenne des 3 derniers jours), extrapolée sur le nombre de jours du mois |
 | Variation vs semaine/mois/année précédente | Écart en % entre la somme des N derniers jours et celle des N jours précédents (N = 7/30/365) |
 | Éco-score, grade, conseil | Moyenne de litres/jour/personne sur 30 jours, comparée aux repères ADEME (≤80 L = excellent, ≥150 L = médiocre) |

@@ -51,6 +51,7 @@ async def test_diagnostics_redacts_credentials(hass) -> None:
         contract_status=None,
         site_address=None,
         meter_serial_number=None,
+        cost_total=None,
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
@@ -110,6 +111,7 @@ async def test_diagnostics_surfaces_raw_consumption_response(hass) -> None:
         contract_status=None,
         site_address=None,
         meter_serial_number=None,
+        cost_total=None,
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
@@ -162,6 +164,7 @@ async def test_diagnostics_reports_error_instead_of_raising(hass) -> None:
         contract_status=None,
         site_address=None,
         meter_serial_number=None,
+        cost_total=None,
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 

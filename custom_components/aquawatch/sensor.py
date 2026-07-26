@@ -69,6 +69,14 @@ SENSOR_DESCRIPTIONS: tuple[AquaWatchSensorDescription, ...] = (
         value_fn=lambda d: d.cost_month_to_date,
     ),
     AquaWatchSensorDescription(
+        key="cout_total",
+        translation_key="cout_total",
+        native_unit_of_measurement="EUR",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        value_fn=lambda d: d.cost_total,
+    ),
+    AquaWatchSensorDescription(
         key="prix_m3",
         translation_key="prix_m3",
         native_unit_of_measurement="EUR/m³",

@@ -59,7 +59,8 @@
       "vs_annee_precedente": { "name": "Change vs previous year" },
       "eco_score": { "name": "Eco-score" },
       "derniere_synchro": { "name": "Last sync" },
-      "solde_compte": { "name": "Account balance" }
+      "solde_compte": { "name": "Account balance" },
+      "cout_total": { "name": "Total cost" }
     },
     "binary_sensor": {
       "fuite_suspectee": { "name": "Leak suspected" },

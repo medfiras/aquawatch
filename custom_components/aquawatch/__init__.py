@@ -27,12 +27,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     statistic_id = statistics.statistic_id_for_entry(entry.entry_id)
+    cost_statistic_id = statistics.cost_statistic_id_for_entry(entry.entry_id)
     last_stats = await hass.async_add_executor_job(
         get_last_statistics, hass, 1, statistic_id, True, {"sum"}
     )
     backfill_batch = None
     if not last_stats:
-        backfill_batch = await _async_backfill_statistics(hass, entry, statistic_id)
+        backfill_batch = await _async_backfill_statistics(
+            hass, entry, statistic_id, cost_statistic_id
+        )
 
     coordinator = AquaWatchCoordinator(hass, entry)
     if backfill_batch and backfill_batch.records:
@@ -44,7 +47,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # the resulting running sum is simply the sum of all backfilled
         # records' liters (in m3).
         running_sum = sum(r.liters for r in backfill_batch.records) / 1000
-        coordinator.seed_from_backfill(backfill_batch.records, running_sum)
+        cost_running_sum = running_sum * backfill_batch.price_per_m3
+        coordinator.seed_from_backfill(
+            backfill_batch.records, running_sum, cost_running_sum
+        )
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
@@ -66,18 +72,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Delete the durable external statistic when the entry is fully removed.
 
-    Without this, the statistic pushed by `statistics.async_push_records`
-    stays in the recorder forever under its own entry_id-derived
-    statistic_id, forever showing up as a same-named duplicate ("AquaWatch
-    <title>") in the Energy dashboard's source picker every time the
-    integration is removed and re-added.
+    Without this, the statistics pushed by `statistics.async_push_records`
+    and `async_push_cost_records` stay in the recorder forever under their
+    entry_id-derived statistic_ids, forever showing up as same-named
+    duplicates ("AquaWatch <title>") in the Energy dashboard's source
+    picker every time the integration is removed and re-added.
     """
     statistic_id = statistics.statistic_id_for_entry(entry.entry_id)
-    get_instance(hass).async_clear_statistics([statistic_id])
+    cost_statistic_id = statistics.cost_statistic_id_for_entry(entry.entry_id)
+    get_instance(hass).async_clear_statistics([statistic_id, cost_statistic_id])
 
 
 async def _async_backfill_statistics(
-    hass: HomeAssistant, entry: ConfigEntry, statistic_id: str
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    statistic_id: str,
+    cost_statistic_id: str,
 ) -> ConsumptionBatch | None:
     """Import as much historical consumption as the provider will allow.
 
@@ -118,5 +128,13 @@ async def _async_backfill_statistics(
 
     statistics.async_push_records(
         hass, statistic_id, entry.title, batch.records, running_sum_start=0.0
+    )
+    statistics.async_push_cost_records(
+        hass,
+        cost_statistic_id,
+        entry.title,
+        batch.records,
+        batch.price_per_m3,
+        running_sum_start=0.0,
     )
     return batch

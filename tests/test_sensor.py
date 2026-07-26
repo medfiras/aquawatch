@@ -39,6 +39,7 @@ def _sample_data() -> AquaWatchData:
         contract_status="Actif",
         site_address="85 AV DE VERSAILLES, 93220 GAGNY",
         meter_serial_number="I26IA206176",
+        cost_total=123.45,
     )
 
 
@@ -138,6 +139,15 @@ def test_solde_compte_reads_account_balance() -> None:
     entity.coordinator = coordinator
     entity.entity_description = description
     assert entity.native_value == -12.5
+
+
+def test_cout_total_reads_cost_total() -> None:
+    coordinator = _fake_coordinator(_sample_data())
+    description = _find_description("cout_total")
+    entity = AquaWatchSensor.__new__(AquaWatchSensor)
+    entity.coordinator = coordinator
+    entity.entity_description = description
+    assert entity.native_value == 123.45
 
 
 def test_init_uses_contract_number_when_present() -> None:

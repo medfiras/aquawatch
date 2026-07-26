@@ -32,6 +32,7 @@ def _fake_coordinator(**overrides) -> MagicMock:
         contract_status=None,
         site_address=None,
         meter_serial_number=None,
+        cost_total=None,
     )
     base.update(overrides)
     coordinator = MagicMock()

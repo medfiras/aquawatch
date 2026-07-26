@@ -79,14 +79,14 @@ async def test_setup_entry_backfills_statistics_and_creates_coordinator(hass) ->
     assert DOMAIN in hass.data
     assert entry.entry_id in hass.data[DOMAIN]
     # The backfill fetches through "today" and pushes its records into
-    # long-term statistics. The coordinator is then seeded with those same
-    # records/running-sum (see __init__.async_setup_entry ->
-    # coordinator.seed_from_backfill), so its first refresh's incremental
-    # window (last_known + 1 day .. today) is empty and it pushes NOTHING
-    # further — there must be exactly one push of the backfilled records,
-    # not two, or the statistic's cumulative sum would double-count the
-    # overlapping days.
-    assert mock_add_stats.call_count == 1
+    # long-term statistics (once for volume, once for cost). The coordinator
+    # is then seeded with those same records/running-sums (see
+    # __init__.async_setup_entry -> coordinator.seed_from_backfill), so its
+    # first refresh's incremental window (last_known + 1 day .. today) is
+    # empty and it pushes NOTHING further — there must be exactly one
+    # backfill push of each statistic, not two, or the cumulative sum would
+    # double-count the overlapping days.
+    assert mock_add_stats.call_count == 2
     pushed_statistics = mock_add_stats.call_args_list[0].args[2]
     pushed_dates = {stat["start"].date() for stat in pushed_statistics}
     assert pushed_dates == {record.record_date for record in _fake_batch().records}
@@ -135,7 +135,10 @@ async def test_remove_entry_clears_its_external_statistic(hass) -> None:
     from unittest.mock import MagicMock
 
     from custom_components.aquawatch import async_remove_entry
-    from custom_components.aquawatch.statistics import statistic_id_for_entry
+    from custom_components.aquawatch.statistics import (
+        cost_statistic_id_for_entry,
+        statistic_id_for_entry,
+    )
 
     entry = _entry()
     entry.add_to_hass(hass)
@@ -149,5 +152,5 @@ async def test_remove_entry_clears_its_external_statistic(hass) -> None:
         await async_remove_entry(hass, entry)
 
     mock_instance.async_clear_statistics.assert_called_once_with(
-        [statistic_id_for_entry(entry.entry_id)]
+        [statistic_id_for_entry(entry.entry_id), cost_statistic_id_for_entry(entry.entry_id)]
     )

@@ -53,6 +53,7 @@ def _fake_coordinator() -> MagicMock:
         contract_status=None,
         site_address=None,
         meter_serial_number=None,
+        cost_total=None,
     )
     return coordinator
 

@@ -48,7 +48,7 @@ from .models import ConsumptionBatch, ConsumptionRecord
 from .providers import get_provider_class
 from .providers.exceptions import AuthError, ProviderError, ScrapingError
 from .repairs import async_create_scraping_broken_issue
-from .statistics import statistic_id_for_entry
+from .statistics import cost_statistic_id_for_entry, statistic_id_for_entry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -117,6 +117,7 @@ class AquaWatchData:
     contract_status: str | None
     site_address: str | None
     meter_serial_number: str | None
+    cost_total: float | None
 
 
 def _format_site_address(contrat: dict) -> str | None:
@@ -153,7 +154,15 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         self._contract_id = entry.data[CONF_CONTRACT_ID]
         self._records: list[ConsumptionRecord] = []
         self._statistic_id = statistic_id_for_entry(entry.entry_id)
+        self._cost_statistic_id = cost_statistic_id_for_entry(entry.entry_id)
         self._running_sum: float | None = None
+        # Total cost accumulated since AquaWatch started tracking, pushed to
+        # its own external statistic (see statistics.async_push_cost_records).
+        # Unlike `_running_sum`/`cumulative_index_m3`, there is no real-world
+        # absolute value to reconcile this against -- "total cost AquaWatch
+        # has tracked" is well-defined on its own, so it needs no anchoring
+        # after a restart, just the same lazy get_last_statistics seed.
+        self._cost_running_sum: float | None = None
         # The last date already durably covered by long-term statistics, as
         # recorded by the recorder component itself. Unlike `self._records`
         # (in-memory only), this reflects state that survives a HA restart,
@@ -274,6 +283,25 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                     else:
                         self._running_sum = 0.0
 
+                    last_cost_stats = await self.hass.async_add_executor_job(
+                        get_last_statistics,
+                        self.hass,
+                        1,
+                        self._cost_statistic_id,
+                        True,
+                        {"sum"},
+                    )
+                    cost_stats_for_id = (
+                        last_cost_stats.get(self._cost_statistic_id)
+                        if last_cost_stats
+                        else None
+                    )
+                    self._cost_running_sum = (
+                        cost_stats_for_id[0].get("sum") or 0.0
+                        if cost_stats_for_id
+                        else 0.0
+                    )
+
                 # The date range already durably covered by long-term
                 # statistics always wins over `self._records` (which resets
                 # to empty on every restart), while still accounting for
@@ -371,6 +399,14 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                             self.entry.title,
                             batch.records,
                             self._running_sum,
+                        )
+                        self._cost_running_sum = statistics.async_push_cost_records(
+                            self.hass,
+                            self._cost_statistic_id,
+                            self.entry.title,
+                            batch.records,
+                            batch.price_per_m3,
+                            self._cost_running_sum or 0.0,
                         )
                         if batch.records:
                             self._last_statistic_date = max(
@@ -552,6 +588,7 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
             contract_status=contract_status,
             site_address=site_address,
             meter_serial_number=meter_serial_number,
+            cost_total=self._cost_running_sum,
         )
 
     async def async_recalibrate_baseline(self) -> None:
@@ -562,7 +599,10 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         await self.async_request_refresh()
 
     def seed_from_backfill(
-        self, records: list[ConsumptionRecord], running_sum: float
+        self,
+        records: list[ConsumptionRecord],
+        running_sum: float,
+        cost_running_sum: float,
     ) -> None:
         """Seed in-memory records/running-sum from a prior historical backfill.
 
@@ -572,6 +612,7 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         """
         self._records = sorted(records, key=lambda r: r.record_date)
         self._running_sum = running_sum
+        self._cost_running_sum = cost_running_sum
 
 
 def _percent_change(

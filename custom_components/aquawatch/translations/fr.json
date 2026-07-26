@@ -59,7 +59,8 @@
       "vs_annee_precedente": { "name": "Variation vs année précédente" },
       "eco_score": { "name": "Éco-score" },
       "derniere_synchro": { "name": "Dernière synchronisation" },
-      "solde_compte": { "name": "Solde du compte" }
+      "solde_compte": { "name": "Solde du compte" },
+      "cout_total": { "name": "Coût total" }
     },
     "binary_sensor": {
       "fuite_suspectee": { "name": "Fuite suspectée" },

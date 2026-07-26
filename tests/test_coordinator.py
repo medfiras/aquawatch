@@ -165,6 +165,10 @@ async def test_update_pushes_new_batch_into_statistics_with_threaded_running_sum
             "custom_components.aquawatch.coordinator.statistics.async_push_records",
             side_effect=[10.15, 10.35],
         ) as mock_push,
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records",
+            side_effect=[40.6, 41.4],
+        ),
     ):
         coordinator = AquaWatchCoordinator(hass, entry)
         await coordinator._async_update_data()
@@ -181,8 +185,10 @@ async def test_update_pushes_new_batch_into_statistics_with_threaded_running_sum
     assert second_call_args[3] == batch2.records
     assert second_call_args[4] == 10.15
 
-    # get_last_statistics is only consulted once, to seed the running sum.
-    assert mock_get_last_stats.call_count == 1
+    # get_last_statistics is only consulted once per lifetime for each of
+    # the volume and cost statistics (2 calls total), to seed their running
+    # sums -- not on every update cycle.
+    assert mock_get_last_stats.call_count == 2
 
 
 async def test_restart_resumes_from_last_statistic_date_not_full_history_window(
@@ -261,6 +267,10 @@ async def test_restart_resumes_from_last_statistic_date_not_full_history_window(
         patch(
             "custom_components.aquawatch.coordinator.statistics.async_push_records",
             return_value=500.12,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records",
+            return_value=2500.6,
         ),
     ):
         # Simulate a fresh coordinator after a HA restart: `_records` is
@@ -366,6 +376,10 @@ async def test_restart_reconstructs_records_from_long_term_statistics(
         patch(
             "custom_components.aquawatch.coordinator.statistics.async_push_records",
             return_value=5.47,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records",
+            return_value=27.35,
         ),
     ):
         coordinator = AquaWatchCoordinator(hass, entry)
@@ -480,6 +494,10 @@ async def test_index_anchor_retried_next_cycle_when_no_real_data_yet(
             "custom_components.aquawatch.coordinator.statistics.async_push_records",
             return_value=5.47,
         ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records",
+            return_value=27.35,
+        ),
     ):
         coordinator = AquaWatchCoordinator(hass, entry)
 
@@ -575,10 +593,11 @@ def test_seed_from_backfill_sets_records_sorted_and_running_sum(hass) -> None:
         _record(date(2024, 3, 1), 100.0),
     ]
 
-    coordinator.seed_from_backfill(records, running_sum=42.5)
+    coordinator.seed_from_backfill(records, running_sum=42.5, cost_running_sum=200.0)
 
     assert coordinator._records == sorted(records, key=lambda r: r.record_date)
     assert coordinator._running_sum == 42.5
+    assert coordinator._cost_running_sum == 200.0
 
 
 async def test_seed_from_backfill_prevents_reduplicate_push_on_first_refresh(
@@ -637,7 +656,9 @@ async def test_seed_from_backfill_prevents_reduplicate_push_on_first_refresh(
         ) as mock_push,
     ):
         coordinator = AquaWatchCoordinator(hass, entry)
-        coordinator.seed_from_backfill(backfilled_records, running_sum=0.22)
+        coordinator.seed_from_backfill(
+            backfilled_records, running_sum=0.22, cost_running_sum=1.1
+        )
         await coordinator._async_update_data()
 
     # The backfill already reached "today", so the coordinator's own
@@ -849,6 +870,9 @@ async def test_update_enriches_data_with_contract_metadata_when_supported(hass) 
             return_value={},
         ),
         patch("custom_components.aquawatch.coordinator.statistics.async_push_records"),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records"
+        ),
     ):
         coordinator = AquaWatchCoordinator(hass, entry)
         data = await coordinator._async_update_data()
@@ -909,6 +933,9 @@ async def test_update_keeps_previous_metadata_when_refresh_fails(hass) -> None:
             return_value={},
         ),
         patch("custom_components.aquawatch.coordinator.statistics.async_push_records"),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records"
+        ),
     ):
         coordinator = AquaWatchCoordinator(hass, entry)
         coordinator.data = AquaWatchData(
@@ -932,6 +959,7 @@ async def test_update_keeps_previous_metadata_when_refresh_fails(hass) -> None:
             contract_status="Actif",
             site_address="85 AV DE VERSAILLES, 93220 GAGNY",
             meter_serial_number="I26IA206176",
+            cost_total=None,
         )
 
         data = await coordinator._async_update_data()
@@ -1013,6 +1041,9 @@ async def test_update_survives_non_provider_error_during_metadata_refresh(hass) 
             return_value={},
         ),
         patch("custom_components.aquawatch.coordinator.statistics.async_push_records"),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records"
+        ),
     ):
         coordinator = AquaWatchCoordinator(hass, entry)
         # Must not raise -- the primary consumption fetch must still succeed.
