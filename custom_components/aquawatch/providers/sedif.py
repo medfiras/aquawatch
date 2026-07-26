@@ -166,18 +166,6 @@ class SedifProvider(WaterProvider):
             price_per_m3=float(result.get("prixMoyenEau", 0)),
         )
 
-    async def async_get_raw_daily_consumption(
-        self, contract_id: str, start: date, end: date
-    ) -> dict[str, Any]:
-        """Return the unprocessed getData response (for debugging).
-
-        Not part of the WaterProvider interface -- SEDIF-specific, used by
-        diagnostics.py to check whether the portal exposes a more detailed
-        tariff breakdown than the single blended `prixMoyenEau` figure.
-        """
-        await self._ensure_authenticated()
-        return await self._get_consumption_raw(contract_id, start, end)
-
     async def _get_consumption_raw(
         self, contract_id: str, start: date, end: date
     ) -> dict[str, Any]:
