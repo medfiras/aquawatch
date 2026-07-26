@@ -283,24 +283,32 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                     else:
                         self._running_sum = 0.0
 
-                    last_cost_stats = await self.hass.async_add_executor_job(
-                        get_last_statistics,
-                        self.hass,
-                        1,
-                        self._cost_statistic_id,
-                        True,
-                        {"sum"},
-                    )
-                    cost_stats_for_id = (
-                        last_cost_stats.get(self._cost_statistic_id)
-                        if last_cost_stats
-                        else None
-                    )
-                    self._cost_running_sum = (
-                        cost_stats_for_id[0].get("sum") or 0.0
-                        if cost_stats_for_id
-                        else 0.0
-                    )
+                    if self._cost_running_sum is None:
+                        # Guarded independently of the volume seed above: a
+                        # retroactive cost backfill (see
+                        # __init__._async_backfill_cost_from_existing_volume)
+                        # may already have set this via seed_cost_running_sum
+                        # before this first refresh even runs, and must not
+                        # be clobbered back to whatever the recorder
+                        # happens to already have on disk.
+                        last_cost_stats = await self.hass.async_add_executor_job(
+                            get_last_statistics,
+                            self.hass,
+                            1,
+                            self._cost_statistic_id,
+                            True,
+                            {"sum"},
+                        )
+                        cost_stats_for_id = (
+                            last_cost_stats.get(self._cost_statistic_id)
+                            if last_cost_stats
+                            else None
+                        )
+                        self._cost_running_sum = (
+                            cost_stats_for_id[0].get("sum") or 0.0
+                            if cost_stats_for_id
+                            else 0.0
+                        )
 
                 # The date range already durably covered by long-term
                 # statistics always wins over `self._records` (which resets
@@ -612,6 +620,18 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         """
         self._records = sorted(records, key=lambda r: r.record_date)
         self._running_sum = running_sum
+        self._cost_running_sum = cost_running_sum
+
+    def seed_cost_running_sum(self, cost_running_sum: float) -> None:
+        """Seed the in-memory cost running sum from a prior retroactive backfill.
+
+        Called once, before the first refresh, when the volume statistic
+        already existed but the cost statistic was just backfilled for the
+        first time (see __init__._async_backfill_cost_from_existing_volume).
+        Setting it directly avoids re-reading it back from the recorder,
+        whose external-statistics writes are queued asynchronously and could
+        otherwise race a get_last_statistics read right after pushing.
+        """
         self._cost_running_sum = cost_running_sum
 
 

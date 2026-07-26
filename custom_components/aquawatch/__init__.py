@@ -39,6 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         get_last_statistics, hass, 1, statistic_id, True, {"sum"}
     )
     backfill_batch = None
+    retroactive_cost_running_sum = None
     if not last_stats:
         backfill_batch = await _async_backfill_statistics(
             hass, entry, statistic_id, cost_statistic_id
@@ -56,8 +57,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             get_last_statistics, hass, 1, cost_statistic_id, True, {"sum"}
         )
         if not last_cost_stats:
-            await _async_backfill_cost_from_existing_volume(
-                hass, entry, statistic_id, cost_statistic_id
+            retroactive_cost_running_sum = (
+                await _async_backfill_cost_from_existing_volume(
+                    hass, entry, statistic_id, cost_statistic_id
+                )
             )
 
     coordinator = AquaWatchCoordinator(hass, entry)
@@ -74,6 +77,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator.seed_from_backfill(
             backfill_batch.records, running_sum, cost_running_sum
         )
+    if retroactive_cost_running_sum is not None:
+        # Seed directly from the value just computed in memory rather than
+        # re-reading it back from the recorder: external statistics writes
+        # are queued onto the recorder's own thread, so a get_last_statistics
+        # read right after pushing can race the write and see nothing yet,
+        # silently resetting the cost running sum back to 0.
+        coordinator.seed_cost_running_sum(retroactive_cost_running_sum)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
@@ -168,9 +178,10 @@ async def _async_backfill_cost_from_existing_volume(
     entry: ConfigEntry,
     statistic_id: str,
     cost_statistic_id: str,
-) -> None:
+) -> float | None:
     """Retroactively backfill the cost statistic from the volume statistic's
-    own history.
+    own history, returning the resulting running sum (or None if nothing
+    was pushed).
 
     Handles upgrading an existing installation to a version with cost
     tracking: the volume statistic may already hold years of daily history,
@@ -193,19 +204,19 @@ async def _async_backfill_cost_from_existing_volume(
                 entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD]
             )
         except AuthError:
-            return
+            return None
         try:
             recent_batch = await provider.async_get_daily_consumption(
                 entry.data[CONF_CONTRACT_ID], today - timedelta(days=1), today
             )
             price_per_m3 = recent_batch.price_per_m3
         except ProviderError:
-            return
+            return None
     finally:
         await provider.async_close()
 
     if not price_per_m3:
-        return
+        return None
 
     start_time = datetime.combine(
         today - timedelta(days=_HISTORY_WINDOW_DAYS),
@@ -237,6 +248,9 @@ async def _async_backfill_cost_from_existing_volume(
             )
         )
 
-    statistics.async_push_cost_records(
+    if not records:
+        return None
+
+    return statistics.async_push_cost_records(
         hass, cost_statistic_id, entry.title, records, price_per_m3, running_sum_start=0.0
     )

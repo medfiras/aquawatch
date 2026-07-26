@@ -177,6 +177,13 @@ async def test_cost_backfilled_retroactively_when_volume_exists_but_cost_does_no
     # 0.2 m3 * 4.0 EUR/m3 (the fake provider's price_per_m3)
     assert first_call_statistics[0]["sum"] == pytest.approx(0.8)
 
+    # The coordinator must have been seeded with the retroactive backfill's
+    # running sum directly (0.8), not re-read it back from get_last_statistics
+    # (mocked to return {} here) and reset it to 0 -- then its own first
+    # refresh adds today's push (0.15 m3 * 4.0 EUR/m3 = 0.6) on top.
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator._cost_running_sum == pytest.approx(0.8 + 0.6)
+
 
 async def test_unload_entry_removes_coordinator(hass) -> None:
     entry = _entry()
