@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 
 from homeassistant.components.recorder.statistics import (
@@ -162,6 +162,15 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         # this coordinator lifetime" (lazily resolved on first update, same
         # as `self._running_sum`).
         self._last_statistic_date: date | None = None
+        # True once `_records` has been rebuilt from long-term statistics
+        # (see `_async_reconstruct_records_from_statistics`) but not yet
+        # re-anchored to a real absolute meter index. The "sum" stored in
+        # long-term statistics is a relative running total seeded from 0.0
+        # at the first backfill (fine for the Energy dashboard), NOT the
+        # same scale as the physical `cumulative_index_m3` SEDIF reports --
+        # so reconstructed records carry that relative value until the next
+        # real provider fetch supplies an anchor to re-base them on.
+        self._records_need_index_anchor = False
 
     async def _async_update_data(self) -> AquaWatchData:
         provider = self._provider_cls()
@@ -260,6 +269,8 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                                     today
                                 )
                             )
+                            if self._records:
+                                self._records_need_index_anchor = True
                     else:
                         self._running_sum = 0.0
 
@@ -327,6 +338,30 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                             raise UpdateFailed(str(err)) from err
 
                     if batch is not None:
+                        if self._records_need_index_anchor and batch.records:
+                            # Re-base the reconstructed records' index onto
+                            # the real physical scale now that a fresh
+                            # provider fetch supplies one: the reconstructed
+                            # value immediately before this batch should
+                            # equal the batch's first real index minus that
+                            # day's own consumption.
+                            anchor = min(batch.records, key=lambda r: r.record_date)
+                            last_reconstructed = max(
+                                self._records, key=lambda r: r.record_date
+                            )
+                            offset = (
+                                anchor.cumulative_index_m3 - anchor.liters / 1000
+                            ) - last_reconstructed.cumulative_index_m3
+                            self._records = [
+                                replace(
+                                    r,
+                                    cumulative_index_m3=r.cumulative_index_m3
+                                    + offset,
+                                )
+                                for r in self._records
+                            ]
+                            self._records_need_index_anchor = False
+
                         self._records.extend(batch.records)
                         price_per_m3 = batch.price_per_m3
 

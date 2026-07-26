@@ -337,7 +337,10 @@ async def test_restart_reconstructs_records_from_long_term_statistics(
         ]
     }
 
-    fake_batch = ConsumptionBatch(records=[_record(today, 120.0)], price_per_m3=4.0)
+    real_anchor_record = ConsumptionRecord(
+        record_date=today, liters=120.0, cumulative_index_m3=50.12, is_estimated=False
+    )
+    fake_batch = ConsumptionBatch(records=[real_anchor_record], price_per_m3=4.0)
 
     fake_provider = AsyncMock()
     del fake_provider.async_get_raw_contract_details
@@ -378,10 +381,119 @@ async def test_restart_reconstructs_records_from_long_term_statistics(
         today,
     ]
 
+    # The reconstructed records' index must be re-anchored to the real
+    # physical scale the fresh fetch reports (50.12 - 0.12 = 50.0 the day
+    # before), not left in long-term statistics' relative running-sum scale
+    # (which starts from 0.0 at the first backfill and is unrelated to the
+    # meter's actual reading).
+    offset = 44.65  # (50.12 - 0.12) - 5.35
     reconstructed = coordinator._records[0]
     assert reconstructed.liters == pytest.approx(100.0)
-    assert reconstructed.cumulative_index_m3 == pytest.approx(5.0)
+    assert reconstructed.cumulative_index_m3 == pytest.approx(5.0 + offset)
     assert reconstructed.is_estimated is False
+
+    last_reconstructed = coordinator._records[2]
+    assert last_reconstructed.record_date == last_statistic_date
+    assert last_reconstructed.cumulative_index_m3 == pytest.approx(5.35 + offset)
+
+    real_record = coordinator._records[3]
+    assert real_record.record_date == today
+    assert real_record.cumulative_index_m3 == pytest.approx(50.12)
+
+
+async def test_index_anchor_retried_next_cycle_when_no_real_data_yet(
+    hass,
+) -> None:
+    """If the incremental fetch right after reconstruction returns nothing
+    (SEDIF hasn't published today's reading yet), the reconstructed records'
+    index stays unanchored for that cycle -- but the coordinator must retry
+    the anchoring on the next cycle instead of giving up, once a real batch
+    is finally available.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.models import ConsumptionBatch
+    from custom_components.aquawatch.providers.exceptions import ScrapingError
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    today = date.today()
+    last_statistic_date = today - timedelta(days=1)
+    last_statistic_start_ts = datetime.combine(
+        last_statistic_date, datetime.min.time(), tzinfo=timezone.utc
+    ).timestamp()
+    statistic_id = statistic_id_for_entry(entry.entry_id)
+    historical_rows = {
+        statistic_id: [
+            {"start": last_statistic_start_ts, "state": 0.15, "sum": 5.35},
+        ]
+    }
+
+    real_anchor_record = ConsumptionRecord(
+        record_date=today, liters=120.0, cumulative_index_m3=50.12, is_estimated=False
+    )
+    fake_batch = ConsumptionBatch(records=[real_anchor_record], price_per_m3=4.0)
+
+    fake_provider = AsyncMock()
+    del fake_provider.async_get_raw_contract_details
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(
+        side_effect=[ScrapingError("not published yet"), fake_batch]
+    )
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.get_last_statistics",
+            return_value={
+                statistic_id: [{"sum": 5.35, "start": last_statistic_start_ts}]
+            },
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics_during_period",
+            return_value=historical_rows,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_records",
+            return_value=5.47,
+        ),
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+
+        await coordinator._async_update_data()
+        assert coordinator._records_need_index_anchor is True
+        assert coordinator._records[0].cumulative_index_m3 == pytest.approx(5.35)
+
+        await coordinator._async_update_data()
+
+    assert coordinator._records_need_index_anchor is False
+    offset = (50.12 - 0.12) - 5.35
+    reconstructed = coordinator._records[0]
+    assert reconstructed.record_date == last_statistic_date
+    assert reconstructed.cumulative_index_m3 == pytest.approx(5.35 + offset)
 
 
 def _build_coordinator(hass) -> "AquaWatchCoordinator":  # noqa: F821
