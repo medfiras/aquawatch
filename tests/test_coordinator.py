@@ -1052,3 +1052,76 @@ async def test_update_survives_non_provider_error_during_metadata_refresh(hass) 
     assert data is not None
     assert data.records == batch.records
     assert data.account_balance is None
+
+
+async def test_incremental_fetch_drops_records_the_provider_re_serves(hass) -> None:
+    """Reproduces a real SEDIF bug: instead of ScrapingError or an empty
+    result, some accounts get the last *published* day served again when
+    asked for a day that isn't published yet. Accepting that blindly would
+    re-push an already-covered day into long-term statistics every cycle,
+    inflating the running sum on each poll (seen live: 14 identical
+    same-day pushes from 14 hourly cycles, corrupting the Energy dashboard).
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.models import ConsumptionBatch
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    today = date.today()
+    last_known = today - timedelta(days=1)
+    stale_record = _record(last_known, 233.0)
+    stale_batch = ConsumptionBatch(records=[stale_record], price_per_m3=4.0)
+
+    fake_provider = AsyncMock()
+    del fake_provider.async_get_raw_contract_details
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(return_value=stale_batch)
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_records"
+        ) as mock_push,
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records"
+        ) as mock_push_cost,
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        coordinator._records = [stale_record]
+        coordinator._running_sum = 0.1
+        coordinator._cost_running_sum = 0.5
+        coordinator._last_statistic_date = last_known
+
+        await coordinator._async_update_data()
+
+    # No duplicate must have been appended, and nothing re-pushed.
+    assert coordinator._records == [stale_record]
+    assert coordinator._last_statistic_date == last_known
+    mock_push.assert_called_once()
+    assert mock_push.call_args.args[3] == []
+    mock_push_cost.assert_called_once()
+    assert mock_push_cost.call_args.args[3] == []

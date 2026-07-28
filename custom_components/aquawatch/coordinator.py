@@ -373,6 +373,31 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                         except ProviderError as err:
                             raise UpdateFailed(str(err)) from err
 
+                    if batch is not None and self._last_statistic_date is not None:
+                        # Defensive: some SEDIF accounts have been observed
+                        # to return the last *published* reading again
+                        # (instead of an empty result or ScrapingError) when
+                        # asked for a day that hasn't been published yet.
+                        # Blindly accepting that would re-push an
+                        # already-covered day every cycle, inflating the
+                        # long-term statistics' running sum on each poll.
+                        fresh_records = [
+                            r
+                            for r in batch.records
+                            if r.record_date > self._last_statistic_date
+                        ]
+                        if len(fresh_records) != len(batch.records):
+                            _LOGGER.debug(
+                                "Dropped %d already-covered record(s) the "
+                                "provider returned again for %s..%s",
+                                len(batch.records) - len(fresh_records),
+                                start,
+                                today,
+                            )
+                        batch = ConsumptionBatch(
+                            records=fresh_records, price_per_m3=batch.price_per_m3
+                        )
+
                     if batch is not None:
                         if self._records_need_index_anchor and batch.records:
                             # Re-base the reconstructed records' index onto
