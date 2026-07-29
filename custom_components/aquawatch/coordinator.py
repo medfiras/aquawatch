@@ -171,6 +171,13 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
         # this coordinator lifetime" (lazily resolved on first update, same
         # as `self._running_sum`).
         self._last_statistic_date: date | None = None
+        # Whether the record at `_last_statistic_date` was marked estimated
+        # by the provider (SEDIF's FLAG_ESTIMATION): some readings start
+        # provisional and get revised to a final value on a later fetch. If
+        # True, the next update cycle re-requests that same day (instead of
+        # only the days after it) so the revision can still land instead of
+        # being permanently locked in at its provisional value.
+        self._last_statistic_date_is_estimated: bool = False
         # True once `_records` has been rebuilt from long-term statistics
         # (see `_async_reconstruct_records_from_statistics`) but not yet
         # re-anchored to a real absolute meter index. The "sum" stored in
@@ -245,8 +252,12 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
             if not self._records:
                 provisional_start = today - timedelta(days=COLD_START_ATTEMPTS_DAYS[0])
             else:
-                last_known = max(r.record_date for r in self._records)
-                provisional_start = last_known + timedelta(days=1)
+                newest_known = max(self._records, key=lambda r: r.record_date)
+                provisional_start = (
+                    newest_known.record_date
+                    if newest_known.is_estimated
+                    else newest_known.record_date + timedelta(days=1)
+                )
 
             price_per_m3 = self.data.price_per_m3 if self.data else 0.0
             if provisional_start <= today:
@@ -323,6 +334,11 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                     if self._records:
                         candidates.append(max(r.record_date for r in self._records))
                     start = max(candidates) + timedelta(days=1)
+                    if self._last_statistic_date_is_estimated:
+                        # Re-request the boundary day itself instead of only
+                        # what comes after it, so a provisional reading can
+                        # still be revised to its final value.
+                        start = min(start, self._last_statistic_date)
 
                 if start <= today:
                     batch = None
@@ -381,10 +397,17 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                         # Blindly accepting that would re-push an
                         # already-covered day every cycle, inflating the
                         # long-term statistics' running sum on each poll.
+                        # The one exception is the boundary day itself when
+                        # it was left estimated -- that one is expected to
+                        # come back again with a revised value.
                         fresh_records = [
                             r
                             for r in batch.records
                             if r.record_date > self._last_statistic_date
+                            or (
+                                r.record_date == self._last_statistic_date
+                                and self._last_statistic_date_is_estimated
+                            )
                         ]
                         if len(fresh_records) != len(batch.records):
                             _LOGGER.debug(
@@ -399,6 +422,34 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                         )
 
                     if batch is not None:
+                        revised_date = (
+                            self._last_statistic_date
+                            if self._last_statistic_date_is_estimated
+                            and any(
+                                r.record_date == self._last_statistic_date
+                                for r in batch.records
+                            )
+                            else None
+                        )
+                        if revised_date is not None:
+                            # The provider revised a previously-estimated
+                            # day: back out its provisional contribution
+                            # before re-adding/re-pushing the corrected one,
+                            # so it isn't double-counted.
+                            superseded = [
+                                r for r in self._records if r.record_date == revised_date
+                            ]
+                            self._records = [
+                                r
+                                for r in self._records
+                                if r.record_date != revised_date
+                            ]
+                            superseded_m3 = sum(r.liters for r in superseded) / 1000
+                            self._running_sum = (self._running_sum or 0.0) - superseded_m3
+                            self._cost_running_sum = (
+                                self._cost_running_sum or 0.0
+                            ) - superseded_m3 * batch.price_per_m3
+
                         if self._records_need_index_anchor and batch.records:
                             # Re-base the reconstructed records' index onto
                             # the real physical scale now that a fresh
@@ -442,8 +493,10 @@ class AquaWatchCoordinator(DataUpdateCoordinator[AquaWatchData]):
                             self._cost_running_sum or 0.0,
                         )
                         if batch.records:
-                            self._last_statistic_date = max(
-                                r.record_date for r in batch.records
+                            newest = max(batch.records, key=lambda r: r.record_date)
+                            self._last_statistic_date = newest.record_date
+                            self._last_statistic_date_is_estimated = (
+                                newest.is_estimated
                             )
         finally:
             await provider.async_close()

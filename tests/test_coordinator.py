@@ -1125,3 +1125,89 @@ async def test_incremental_fetch_drops_records_the_provider_re_serves(hass) -> N
     assert mock_push.call_args.args[3] == []
     mock_push_cost.assert_called_once()
     assert mock_push_cost.call_args.args[3] == []
+
+
+async def test_estimated_boundary_day_gets_revised_not_duplicated(hass) -> None:
+    """Reproduces a real SEDIF behavior: the most recent day is first
+    returned with a provisional value (is_estimated=True), then later
+    revised to its final value. The revision must replace the provisional
+    record (not duplicate it) and back out its provisional contribution
+    from the running sums before adding the corrected one.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.aquawatch.const import (
+        CONF_CONTRACT_ID,
+        CONF_EMAIL,
+        CONF_PASSWORD,
+        CONF_PROVIDER,
+        DOMAIN,
+    )
+    from custom_components.aquawatch.coordinator import AquaWatchCoordinator
+    from custom_components.aquawatch.models import ConsumptionBatch, ConsumptionRecord
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROVIDER: "sedif",
+            CONF_EMAIL: "user@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_CONTRACT_ID: "CTR-1",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    today = date.today()
+    provisional_record = ConsumptionRecord(
+        record_date=today, liters=98.0, cumulative_index_m3=4.524, is_estimated=True
+    )
+    revised_record = ConsumptionRecord(
+        record_date=today, liters=269.0, cumulative_index_m3=4.695, is_estimated=False
+    )
+    revised_batch = ConsumptionBatch(records=[revised_record], price_per_m3=4.0)
+
+    fake_provider = AsyncMock()
+    del fake_provider.async_get_raw_contract_details
+    fake_provider.async_authenticate = AsyncMock()
+    fake_provider.async_get_daily_consumption = AsyncMock(return_value=revised_batch)
+    fake_provider.async_close = AsyncMock()
+
+    with (
+        patch(
+            "custom_components.aquawatch.coordinator.get_provider_class",
+            return_value=lambda: fake_provider,
+        ),
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_records",
+            return_value=999.0,
+        ) as mock_push,
+        patch(
+            "custom_components.aquawatch.coordinator.statistics.async_push_cost_records",
+            return_value=999.0,
+        ),
+    ):
+        coordinator = AquaWatchCoordinator(hass, entry)
+        coordinator._records = [provisional_record]
+        coordinator._running_sum = 4.426 + 0.098  # prior total including the 98L
+        coordinator._cost_running_sum = 100.0
+        coordinator._last_statistic_date = today
+        coordinator._last_statistic_date_is_estimated = True
+
+        await coordinator._async_update_data()
+
+    # The provisional record must be replaced, not duplicated.
+    assert coordinator._records == [revised_record]
+    assert coordinator._last_statistic_date == today
+    assert coordinator._last_statistic_date_is_estimated is False
+
+    # The provisional 98L must be backed out before the revised 269L is
+    # pushed as the running_sum_start, so it isn't double-counted.
+    mock_push.assert_called_once()
+    pushed_records, running_sum_start = (
+        mock_push.call_args.args[3],
+        mock_push.call_args.args[4],
+    )
+    assert pushed_records == [revised_record]
+    assert running_sum_start == pytest.approx(4.426)
